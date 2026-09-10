@@ -68,9 +68,45 @@ target-bound (device+action+nonce, per the WebAuthn purpose-confusion lesson).
 Dry-run + atomic-or-rollback (a half-applied boot/network recipe bricks access).
 Depends on signing (2) and capabilities (1); do not build before them.
 
-## 7 — Screenwall (Comet X)
-Simultaneous multi-view of the four channels — the feature GL paywalled, on
-hardware you own. Cloud-managed. Needs the actual device on the bench.
+## 7 — Screenwall (Comet X)  [SPEC INVALID — rewrite before scheduling]
+As written this item describes hardware that does not exist here. The rm4pe is
+**one capture path and one USB gadget behind a mux**
+(`docs/modules/permissions-capabilities.md` §4.1) — its four channels are a time
+slice, so "simultaneous multi-view of the four channels" is not a feature that
+was paywalled, it is a feature the hardware cannot provide.
+
+Whatever replaces it is one of:
+- **round-robin capture at divided framerate** — the mux walks, each port is
+  sampled in turn, and every tile is stale by up to (N-1) × dwell; or
+- **server-side compositing of sequential grabs** — same walk, assembled into
+  one view server-side.
+
+Both are buildable. Neither is what this item currently promises, and the
+difference is user-visible (a "live" wall that is four stale stills is worse
+than an honest one).
+
+**This is not a deferral — the spec is wrong and must be rewritten first.**
+
+### It also constrains item 1, now
+
+A compositing or round-robin view is, **by construction, a session that walks
+the mux across all four ports.** Under D-010 port scope is enforced as an
+interlock — the session's grant is checked against the currently active channel
+and the connection is torn down when the channel moves. A screenwall session
+moves the channel continuously and deliberately.
+
+So: is a screenwall session expressible under tier-conditional port scope? The
+candidate answers each cost something:
+- it requires a grant on **every** port it displays (honest, and makes a
+  screenwall a privileged thing — probably right);
+- it is a distinct capability that subsumes port scope (simpler, but it is a
+  capability that means "ignore the interlock", which is the shape of every
+  bad exception);
+- the interlock distinguishes *the session moved the mux* from *the mux moved
+  under the session* (most precise, most state).
+
+**The interlock design must answer this before it is built, not discover it
+afterwards.** Recorded in `docs/modules/permissions.md` under Port scope.
 
 ## Blocking open questions
 - **Which devices are on the bench?** Per-model, pairing (screen), and per-port

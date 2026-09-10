@@ -72,6 +72,30 @@ checked against the *currently active channel*, and the connection is torn down
 when the channel moves. That is stateful, and it is a different mechanism from
 the endpoint filtering the rest of this spec describes.
 
+### Open question the interlock design must answer before it is built
+
+A screenwall (roadmap item 7) is, on this hardware, necessarily a session that
+**walks the mux across all four ports** — there is one capture path, so a
+multi-port view is round-robin or server-side compositing either way. That is a
+session which moves the channel continuously and on purpose, against an
+interlock whose whole job is to react when the channel moves.
+
+Three candidate answers, each with a cost:
+
+1. **A screenwall session needs a grant on every port it displays.** Honest,
+   and it makes a screenwall a privileged thing rather than a view. Probably
+   right.
+2. **A distinct capability that subsumes port scope.** Simpler, but it is a
+   capability whose meaning is "ignore the interlock" — the shape of every
+   exception that later turns out to be the hole.
+3. **The interlock distinguishes *this session moved the mux* from *the mux
+   moved under this session*.** Most precise, most state, and it needs the
+   `port.switch` gating to exist so the mover is attributable at all.
+
+Answer this **before** building the interlock. Discovering it afterwards means
+either a screenwall that cannot work or an exception carved into the interlock
+under delivery pressure.
+
 **Note the class of the finding.** The mux moves with no API call and no route
 to gate. That is the same class as `/streamer`: *enforcement points that live at
 routes cannot see operations that do not traverse routes.* Any capability whose
