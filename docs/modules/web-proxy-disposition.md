@@ -83,12 +83,54 @@ migration channel** — not a retained general proxy.
 the work. They must land together or the console path breaks for non-`rtty-go`
 devices; this is not a "gut now, replace later" item.
 
-## What must be true before this lands
+## Interim: narrowed to loopback, NOW (landed)
 
+Gut-and-replace-together is right, but the SSRF was live meanwhile. The same
+boundary the named-service channel will draw permanently is drawn early and
+crudely instead: `httpProxyVaildAddr` now rejects any non-loopback destination.
+
+**Measurement that made this safe** — the console path does not need an
+off-device address. `handleRemoteControl`
+(`ui/src/views/device/components/deviceListView.vue`) builds its URL from a
+**hardcoded** `127.0.0.1:443`:
+
+```js
+let proto = 'https'
+let ipaddr = '127.0.0.1'
+let port = 443
+const addr = encodeURIComponent(`${ipaddr}:${port}${path}`)
+window.open(`/web/${id}/${proto}/${addr}`)
+```
+
+So the console is untouched by the restriction. The *other* call site,
+`accessDeviceWebDialog.vue`, is a form where the operator types an arbitrary IP
+and port — that is the arbitrary-host feature, and it is exactly what the
+narrowing removes.
+
+This answers one of the three open measurements: **the console only ever
+proxies to the device itself.** That is the more boring of the two possible
+answers, and it is the one that makes the replacement simple.
+
+**Ports are deliberately not restricted yet.** The allowlist has to come from
+the firmware's real service list rather than be guessed, and guessing it would
+break device-local access that the named-service channel is meant to preserve.
+Loopback-only already removes the segment-wide reach, which was the live risk.
+
+Mutation-checked: deleting the `ip.IsLoopback()` guard turns
+`TestHTTPProxyAddrIsLoopbackOnly` red on all six off-device cases (managed
+segment, the U-Boot failsafe address, egress, cloud metadata).
+
+**Known rough edge:** `accessDeviceWebDialog.vue` still offers the arbitrary-
+address form, which now returns an error for any off-device address. Removing
+that dialog is part of the D-012 gut and lands with the replacement, not here —
+flagged so it is not mistaken for a regression.
+
+## What must be true before the full replacement lands
+
+- ~~confirmation that the console only proxies to the device itself~~ —
+  **done**, see above: hardcoded `127.0.0.1:443`.
 - the named-service list for (1), derived from the firmware rather than guessed
-- confirmation of which device types actually report a non-`rtty-go` client, so
-  the blast radius of (1) is measured rather than assumed
 - the migration module's channel requirement, since it is a second consumer
 
-**Status:** decided in principle (gut + two replacements), blocked on those
-three measurements. Not started.
+**Status:** interim narrowing **landed**. Full gut + named-service replacement
+decided in principle, blocked on the two remaining measurements.
