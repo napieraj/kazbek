@@ -22,14 +22,22 @@ type logFileHook struct {
 var logFile = &logFileHook{}
 
 func (h *logFileHook) Run(e *zerolog.Event, level zerolog.Level, msg string) {
-	if h.err != nil {
+	// No path configured means no log file was asked for. The hook is attached
+	// whenever stdout is not a terminal, which is true under `go test`, under
+	// systemd, in a container with redirected output and behind any
+	// supervisor -- so without this guard the first log line in all of those
+	// opens "" and fails.
+	if h.err != nil || h.path == "" {
 		return
 	}
 
 	f, err := os.OpenFile(h.path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		h.err = err
-		log.Fatal().Msg(err.Error())
+		// Deliberately NOT log.Fatal: this runs from inside the logger, so
+		// failing to write the log FILE would terminate the process on its
+		// first log line -- and it did. h.err latches, so the console logger
+		// keeps working and the failure is not retried on every line.
 		return
 	}
 	defer f.Close()

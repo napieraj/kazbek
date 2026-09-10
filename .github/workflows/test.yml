@@ -1,0 +1,71 @@
+name: test
+
+# kazbek had no automated test execution of any kind until 2026-09-10. The only
+# workflow that ran on push was build.yml, which compiles and packages and never
+# invokes `go test` or `go vet`; there was no such invocation anywhere in
+# .github, the Makefile or any script, on any branch. Every guard in the tree
+# was unenforced.
+
+on:
+  push:
+    branches:
+      - '**'
+    tags-ignore:
+      - '**'
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 1.24.4
+
+      # internal/server/api.go imports rttys/ui, whose embed.go carries
+      # `//go:embed all:dist`. ui/dist is Vite output and is never committed, so
+      # without it NOTHING in the module compiles -- not even packages that have
+      # no relationship to the frontend. A placeholder is enough to satisfy the
+      # embed and keeps the test job independent of the npm install, which
+      # 403s against the npmmirror URLs seeded in ui/yarn.lock.
+      - name: Satisfy the ui/dist embed
+        run: |
+          mkdir -p ui/dist
+          printf '<!doctype html><title>test placeholder</title>' > ui/dist/index.html
+
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l internal/authz internal/plugins log)"
+          if [ -n "$unformatted" ]; then
+            echo "gofmt needed:"; echo "$unformatted"; exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./internal/authz/... ./internal/plugins/... ./log/...
+
+      # D-014: internal/authz stays portable. Verified rather than asserted --
+      # the only rttys package in its transitive deps must be itself.
+      - name: authz has no dependency on GL-original code
+        run: |
+          deps="$(go list -deps ./internal/authz/... | grep '^rttys/' || true)"
+          unexpected="$(echo "$deps" | grep -v '^rttys/internal/authz' || true)"
+          if [ -n "$unexpected" ]; then
+            echo "internal/authz reaches outside itself:"; echo "$unexpected"; exit 1
+          fi
+
+      - name: go test
+        # ./internal/server/... is NOT in this list and is not silently
+        # dropped: TestRttysStress is a ten-minute stress test that binds
+        # :5913, unsuitable for per-push CI. The security tests in that package
+        # (TestAuthzSubjectFailsClosed, TestSubjectIDIsStableAcrossRename,
+        # TestHTTPProxyAddrIsLoopbackOnly, the TestWriteMsg envelope tests) run
+        # in the step below, selected by name. Fold the package in wholesale
+        # once the stress test is behind a build tag or a -short guard.
+        run: go test ./internal/authz/... ./internal/plugins/... ./log/...
+
+      - name: go test internal/server (excluding the stress test)
+        run: go test ./internal/server/ -run 'TestAuthz|TestSubjectID|TestHTTPProxy|TestWriteMsg|TestDevid'
