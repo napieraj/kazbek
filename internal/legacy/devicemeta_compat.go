@@ -11,9 +11,11 @@ func SaveOrUpdateDeviceMeta(deviceID, mac, description, ip string) error {
     return repo.SaveOrUpdate(context.Background(), deviceID, mac, description, ip)
 }
 
-func UpdateDeviceClient(deviceID, client string) error {
+// SetDeviceClientIfUnset records the device's client type once; see
+// DeviceMetaRepo.SetClientIfUnset for why it is not updatable.
+func SetDeviceClientIfUnset(deviceID, client string) error {
     repo := sqlite.MustContainer().DeviceMeta
-    return repo.UpdateClient(context.Background(), deviceID, client)
+    return repo.SetClientIfUnset(context.Background(), deviceID, client)
 }
 
 func GetDeviceMetaByDeviceID(deviceID string) (*model.DeviceMeta, error) {

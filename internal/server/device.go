@@ -68,8 +68,6 @@ type Device struct {
 	uptime       uint32
 	token        string
 	heartbeat    time.Duration
-	clientInfoMu sync.RWMutex
-	clientInfo   []byte
 
 	users    sync.Map
 	pending  sync.Map
@@ -532,29 +530,33 @@ func (dev *Device) Register(srv *RttyServer) byte {
 	return 0
 }
 
-func (dev *Device) setClientInfo(data []byte) {
-	dev.clientInfoMu.Lock()
-	dev.clientInfo = append(dev.clientInfo[:0], data...)
-	dev.clientInfoMu.Unlock()
-}
-
-// ClientType returns the "client" value from the device's client info JSON
-// (e.g. "rtty-go"). Returns "" if not available or not parseable.
+// ClientType returns the device's client type (e.g. "rtty-go") as recorded
+// SERVER-SIDE against the device record, not as claimed in the current
+// session's info message.
+//
+// This distinction is the point of the function. The client type is consumed
+// to classify a device's own sessions — today the audit label in
+// httpProxyRedirect, and any future decision about how a device's sessions are
+// handled. Reading it from a per-session, device-supplied JSON field would let
+// a device pick its own classification on each connection, and pinned mTLS
+// does not help: D-002 authenticates *which* device is speaking, it does not
+// make that device's claims about itself true.
+//
+// The stored value is written once (SetClientIfUnset) and is not device-
+// updatable. Do NOT change this back to reading the live info message.
+//
+// Returns "" when the store is unavailable or the device has no record yet;
+// callers must treat "" as "unknown", never as a specific type.
 func (dev *Device) ClientType() string {
-	dev.clientInfoMu.RLock()
-	raw := make([]byte, len(dev.clientInfo))
-	copy(raw, dev.clientInfo)
-	dev.clientInfoMu.RUnlock()
-	if len(raw) == 0 {
+	cont := sqlite.TryContainer()
+	if cont == nil || cont.DeviceMeta == nil {
 		return ""
 	}
-	var info struct {
-		Client string `json:"client"`
-	}
-	if err := jsoniter.Unmarshal(raw, &info); err != nil {
+	meta, err := cont.DeviceMeta.GetByDeviceID(context.Background(), dev.id)
+	if err != nil || meta == nil {
 		return ""
 	}
-	return info.Client
+	return meta.Client
 }
 
 func handleDeviceInfoMsg(dev *Device, data []byte) error {
@@ -579,10 +581,17 @@ func handleDeviceInfoMsg(dev *Device, data []byte) error {
 		return nil
 	}
 
-	dev.setClientInfo(data)
 	if payload.Client != "" {
-		if err := legacy.UpdateDeviceClient(dev.id, payload.Client); err != nil {
-			log.Warn().Err(err).Msgf("device '%s' update client info failed", dev.id)
+		// Record the claim once. A device that later claims a DIFFERENT type is
+		// trying to reclassify itself; the write is refused and the attempt is
+		// logged, because that divergence is a signal, not a routine update.
+		if err := legacy.SetDeviceClientIfUnset(dev.id, payload.Client); err != nil {
+			log.Warn().Err(err).Msgf("device '%s' record client type failed", dev.id)
+		} else if stored := dev.ClientType(); stored != "" && stored != payload.Client {
+			log.Warn().Msgf(
+				"device '%s' claims client type %q but is enrolled as %q; keeping the enrolled value",
+				dev.id, payload.Client, stored,
+			)
 		}
 	}
 

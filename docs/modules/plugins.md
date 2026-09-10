@@ -158,7 +158,7 @@ again.
 ### Deferred — the signing module
 
 Research §3b–§3e, the OPA bundle format, key storage, threshold signing,
-Sigstore/Rekor and TUF are recorded in `docs/modules/signing.md` as a survey to
+Sigstore/Rekor and TUF are recorded in `docs/modules/signing-survey.md` as a survey to
 start from. They are explicitly out of this cycle. The standing line holds: if
 you are writing crypto beyond hashing a blob and comparing it, you have left
 scope.

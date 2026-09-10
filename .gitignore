@@ -14,3 +14,17 @@
 .glide/
 
 .vscode
+
+# TLS material is operator-supplied and must never be committed.
+# (A real private key was shipped here once; see docker-compose/certificate/README.md.)
+docker-compose/certificate/*.key
+docker-compose/certificate/*.cer
+docker-compose/certificate/*.pem
+docker-compose/certificate/*.crt
+
+# TLS material is operator-supplied and must never be committed.
+# (A real private key was shipped here once; see docker-compose/certificate/README.md.)
+docker-compose/certificate/*.key
+docker-compose/certificate/*.cer
+docker-compose/certificate/*.pem
+docker-compose/certificate/*.crt

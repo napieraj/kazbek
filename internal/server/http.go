@@ -218,7 +218,13 @@ func doHttpProxy(srv *RttyServer, c net.Conn) {
 				"http proxy devid mismatch: hostDevID=%s sessionDevid=%s sid=%s group=%s host=%s uri=%s",
 				devID, ses.devid, sid, ses.group, domain, req.URL.String(),
 			)
+			// MUST return: sendHTTPErrorResponse only writes bytes to the
+			// raw conn (see its definition below) — it does not abort the
+			// handler. Without this return the mismatch is logged, an error
+			// page is written, AND the request is proxied to the device
+			// anyway, which makes this check non-blocking. Do not remove.
 			sendHTTPErrorResponse(c, "invalid")
+			return
 		}
 	} else {
 		log.Debug().Msgf(
@@ -546,6 +552,30 @@ func tcpAddr2Bytes(addr *net.TCPAddr) []byte {
 	return b
 }
 
+// httpProxyVaildAddr validates the destination of the /web device proxy.
+//
+// LOOPBACK ONLY — do NOT relax this to accept arbitrary addresses.
+//
+// The proxied connection is opened BY THE DEVICE, from the device's network
+// position. Before this restriction the only check was "does it parse as an
+// IPv4 literal", so the reachable set was any IPv4:port the device could route
+// to — i.e. the whole managed segment. docs/THREAT-MODEL.md makes isolation of
+// that segment load-bearing precisely because the firmware userland is
+// unaudited, and an operator-driven proxy through the device punched straight
+// through it. That is an SSRF primitive aimed at the inside of the estate.
+//
+// Restricting to loopback keeps the case the product actually needs — reaching
+// a service on the device itself — and removes the arbitrary-host case
+// entirely. The console path is unaffected: it targets a hardcoded
+// 127.0.0.1:443 (ui/src/views/device/components/deviceListView.vue,
+// handleRemoteControl).
+//
+// This is INTERIM. Per D-012 the route is removed and replaced by a channel
+// that takes a named service rather than an address; this draws the same
+// boundary early and crudely so the SSRF is not live while that is built.
+// Ports are deliberately NOT restricted yet — the allowlist has to come from
+// the firmware's real service list, not be guessed here, and guessing it would
+// break device-local access that the named-service work is meant to preserve.
 func httpProxyVaildAddr(addr string) (net.IP, uint16, error) {
 	ips, ports, err := net.SplitHostPort(addr)
 	if err != nil {
@@ -561,6 +591,11 @@ func httpProxyVaildAddr(addr string) (net.IP, uint16, error) {
 	ip = ip.To4()
 	if ip == nil {
 		return nil, 0, errors.New("invalid IPv4 Addr")
+	}
+
+	// The guard. Removing it re-opens the whole managed segment to the proxy.
+	if !ip.IsLoopback() {
+		return nil, 0, errors.New("proxy destination must be on the device itself (loopback)")
 	}
 
 	port, _ := strconv.Atoi(ports)
@@ -741,6 +776,13 @@ func generateErrorHTML(errorType string) string {
 </html>`, errorType)
 }
 
+// sendHTTPErrorResponse WRITES an error page to the raw connection and returns.
+// It does NOT abort the caller, does not close the conn, and has no way to stop
+// whatever follows it — despite the "send...Response" name, which reads like a
+// terminal action. Every call site that uses it to refuse a request MUST follow
+// it with an explicit return; one that does not will write the error page and
+// then carry on and serve the request anyway. That has happened once already
+// (the devid-mismatch check above). Do not remove the returns.
 func sendHTTPErrorResponse(conn net.Conn, errorType string) {
 	htmlContent := generateErrorHTML(errorType)
 
