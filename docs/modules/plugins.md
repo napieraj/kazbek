@@ -182,3 +182,15 @@ scope.
   and whether the `pst`-tagged partition exists on GL hardware cannot be
   answered from the repository. That is a device measurement, and it is the
   first question the device half has to answer.
+
+  It is filed with the other hardware-blocked questions in
+  `glkvm-debloat/docs/bench-measurements.md`, which carries the exact check
+  (`find_pst()` scans `/etc/fstab` for `X-kvmd.pst-*` mount options, not for a
+  partition name) and the follow-up storage questions, so one pass at the bench
+  answers all of them.
+
+  **Treat the answer as a fork in the plan, not a detail.** Entry present makes
+  the remount discipline largely an adoption problem. Entry absent means the
+  device half is writing a launcher *and* provisioning storage, which is
+  materially bigger. No estimate for the device half should be given before it
+  is answered.
