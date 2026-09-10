@@ -199,7 +199,6 @@ type TimeWindow struct {
 }
 
 // Contains reports whether the instant falls inside the window.
-//
 func (w TimeWindow) Contains(t time.Time) bool {
 	loc := w.Location
 	if loc == nil {
