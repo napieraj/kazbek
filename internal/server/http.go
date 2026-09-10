@@ -747,6 +747,13 @@ func generateErrorHTML(errorType string) string {
 </html>`, errorType)
 }
 
+// sendHTTPErrorResponse WRITES an error page to the raw connection and returns.
+// It does NOT abort the caller, does not close the conn, and has no way to stop
+// whatever follows it — despite the "send...Response" name, which reads like a
+// terminal action. Every call site that uses it to refuse a request MUST follow
+// it with an explicit return; one that does not will write the error page and
+// then carry on and serve the request anyway. That has happened once already
+// (the devid-mismatch check above). Do not remove the returns.
 func sendHTTPErrorResponse(conn net.Conn, errorType string) {
 	htmlContent := generateErrorHTML(errorType)
 
