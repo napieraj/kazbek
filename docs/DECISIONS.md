@@ -171,3 +171,36 @@ defect to be removed, not a convenience to be accepted, and the review for each
 phase checks it. *Reopens if:* the licence question resolves in a way that
 makes the inheritance permanent — and even then portability costs little enough
 to keep.
+
+## D-015 — D-001 is NOT reopened; the encumbered surface shrinks monotonically
+The BUSL finding (`docs/LICENSING.md`) put D-001 back on the table: the fork
+was justified by inheriting the management plane, and the management plane is
+the encumbered part. Measured rather than argued, the answer is **do not
+reopen**.
+
+What GL-original code we still intend to run after roadmap items 1-5:
+authorization is replaced by item 1; audit is being rebuilt; OIDC is ~524 lines
+of thin wrapper over `go-oidc` and LDAP the same over `go-ldap`; `/web` is
+gutted by D-012. **What survives is the Vue UI (~14k lines), the sqlite store
+(~2k), and the CRUD/domain layer around groups, users and relations (~3.7k).**
+
+A Vue UI, a sqlite store and some CRUD is not a rebuild that justifies
+discarding the management plane. D-001's technical premise was never in doubt;
+its economics survive the measurement too, just with a smaller margin than it
+assumed.
+
+**The direction is the load-bearing part: the encumbered surface shrinks
+monotonically as the roadmap executes.** Every item that lands replaces
+GL-original code with kazbek-original code; none adds dependency on it. That is
+the opposite of the usual dependency trap, and it means time works for us.
+
+> Consequently, **a future item that *adds* dependency on GL-original code is a
+> reversal of this decision** and must be argued as one, not slipped in as
+> convenience. That is the whole reason this is recorded here rather than only
+> in a report.
+
+Independent of this: a production-use grant is being requested from GL
+(`docs/gl-request.md`), and D-014 keeps `internal/authz/` portable so the
+authorization spine survives whatever the answer is. Neither blocks the other.
+*Reopens if:* the surviving surface stops shrinking — i.e. if an item is
+proposed that deepens the inheritance.

@@ -101,6 +101,14 @@ That leaves two, and they compose rather than compete:
    `port.switch` gating from the firmware worklist. Without it the interlock
    cannot tell a legitimate walk from a hostile one.
 
+   **D-013 corollary, and it is not optional here:** that distinction resolves
+   from **server-side session state** — what this session was constructed with
+   and what it has asked for — never from anything the device reports about
+   which port is currently active. A device-reported active port is a claim,
+   and the interlock is precisely the thing an attacker would want to lie to.
+   A device that could report its own channel could make a hostile walk look
+   like the session's own.
+
 So the interlock is built with (2) as its mechanism and (1) as the screenwall's
 grant shape. Neither is deferred to item 7.
 
