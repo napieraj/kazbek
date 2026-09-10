@@ -37,9 +37,18 @@ jobs:
           mkdir -p ui/dist
           printf '<!doctype html><title>test placeholder</title>' > ui/dist/index.html
 
+      # Scoped to what this fork owns and has touched, plus named files in
+      # otherwise-inherited packages. internal/server as a whole is NOT
+      # checked: 13 of its files are unformatted on arrival, 49 tree-wide, and
+      # reformatting inherited code would bury the diff that matters. But a
+      # guard scoped away from the file it should cover is how device.go --
+      # which this fork edits -- arrived unformatted through a merge and was
+      # invisible to this very step. Add owned files here as they appear.
       - name: gofmt
         run: |
-          unformatted="$(gofmt -l internal/authz internal/plugins log)"
+          unformatted="$(gofmt -l internal/authz internal/plugins log \
+                                internal/server/device.go \
+                                internal/server/envelope_test.go)"
           if [ -n "$unformatted" ]; then
             echo "gofmt needed:"; echo "$unformatted"; exit 1
           fi
@@ -59,8 +68,11 @@ jobs:
 
       - name: go test
         # ./internal/server/... is NOT in this list and is not silently
-        # dropped: TestRttysStress is a ten-minute stress test that binds
-        # :5913, unsuitable for per-push CI. The security tests in that package
+        # dropped. The reason is NOT that TestRttysStress is slow -- an
+        # earlier version of this comment said so and was wrong, and a
+        # maintainer believing it would reach for -timeout. Measured: the
+        # package fails in 0.015s because TestRttysStress never calls
+        # xconfig.InitGlobal and there is no TestMain, so it panics. The security tests in that package
         # (TestAuthzSubjectFailsClosed, TestSubjectIDIsStableAcrossRename,
         # TestHTTPProxyAddrIsLoopbackOnly, the TestWriteMsg envelope tests) run
         # in the step below, selected by name. Fold the package in wholesale

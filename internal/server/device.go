@@ -60,14 +60,14 @@ type DeviceInfo struct {
 }
 
 type Device struct {
-	group        string
-	id           string
-	proto        uint8
-	desc         string
-	timestamp    int64
-	uptime       uint32
-	token        string
-	heartbeat    time.Duration
+	group     string
+	id        string
+	proto     uint8
+	desc      string
+	timestamp int64
+	uptime    uint32
+	token     string
+	heartbeat time.Duration
 
 	users    sync.Map
 	pending  sync.Map
