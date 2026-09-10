@@ -4,10 +4,12 @@
 repositories (`gl-inet/glkvm-cloud` at v2.8.0, and the GLKVM kvmd tree). None
 required a device, an account, or any access that was not already public.
 
-Two reasons to send this together rather than piecemeal: the findings share
-root causes, and a single coordinated report is also the natural moment to ask
-about the licence (§5) — which is a request, not a condition, and must not read
-as leverage.
+The findings share root causes, so they go together.
+
+**The licence request is deliberately NOT in this document.** It is in
+`docs/gl-request.md` and goes separately. Bundling a request with a security
+report makes the report read as leverage however it is worded, and these
+findings should be fixed regardless of any answer about licensing.
 
 ---
 
@@ -89,27 +91,6 @@ Related: `/switch/set_active{,_prev,_next}` (`kvmd/apps/kvmd/api/switch.py:56,
 61,66`) is the port boundary itself and is not distinguished from other
 operations in the auth model.
 
-## 5. A licence question (a request, not part of the report)
-
-`glkvm-cloud`'s `LICENSE` is Business Source License 1.1 with an Additional Use
-Grant limited to non-production use until 2030-01-01. We maintain a fork
-(`kazbek`) that replaces the device-trust core with pinned mutual TLS and is
-self-hosted by design, which appears to be production use under any ordinary
-reading.
-
-**We would like to ask whether GL would grant production use for self-hosted,
-non-commercial deployments of derivative works.** We are asking, not asserting
-an entitlement, and this request is independent of §§1-4 — those should be
-fixed regardless of the answer, and we will not treat the two as linked.
-
-Separately, and offered as an observation rather than a claim: nine Go files in
-the repository carry a verbatim MIT grant naming Jianhui Zhao (`rttys`, the
-upstream `glkvm-cloud` derives from) while the repository's `LICENSE` is
-BUSL-1.1, and four further files derived from `rttys`'s `main.go` appear to
-have had that attribution removed. We are not lawyers and are not asserting a
-violation — we raise it because it is more easily resolved by GL than by anyone
-downstream.
-
 ---
 
 ## Handling
@@ -122,3 +103,6 @@ that speeds it up.
 Nothing here depends on the unauthenticated `init`-claim race described in
 `docs/modules/migration.md`; that remains isolated-network-only and is
 deliberately excluded from this report and from any public artifact.
+
+The licence request (`docs/gl-request.md`) is sent on its own track and is not
+contingent on any of this.
