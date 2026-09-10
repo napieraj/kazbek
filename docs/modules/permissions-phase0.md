@@ -179,12 +179,105 @@ Reusable, and worth keeping:
 Not reusable: the resolution logic (there isn't any), the storage (compiled-in
 map, no writes), the scope model (none), the constraint model (none).
 
-## 4. Open, pending sub-agent input
+## 4. The constraint engine — KVM Fleet
 
-The adopt-vs-reinvent call for the *constraint* engine specifically
-(time-of-day / require-MFA / max-sessions / approval) is still out with the
-research pass, along with the capability enumeration and the port-scope
-fixtures. Sections 1 and 2 above do not depend on them.
+`github.com/KVMFleet/policy-engine` @ `8841f37e` (v0.2.1), Python, 283 code
+lines across 10 files, 29 tests. Five constraints: `time_of_day`,
+`require_mfa`, `max_concurrent_sessions`, `approval_required`, `ip_allowlist`.
+No `requires_presence` — the one the spec most wants for a KVM.
+
+**It has no grant model.** Searched the package for `subject`, `user_id`,
+`principal`, `role`, `group`, `scope`, `device_id`: zero hits for every one.
+Its `EvalContext` carries no identity; targeting is a tag filter plus an action
+filter. There is no explicit deny, so no precedence rule. Its own README says
+it is "not a general-purpose policy engine… use Cedar or OPA." It is a
+constraint layer designed to run *after* somebody else's RBAC has already
+decided who the subject is.
+
+That is the decisive measurement: **the part of item 1 that is hard — subject,
+scope, deny precedence — is exactly the part neither engine has.** GL has a
+role table and no constraints; KVM Fleet has constraints and no subjects.
+Neither has scope, and neither has a port scope (D-009).
+
+Two defects were found by *executing* its evaluator, not just reading it:
+
+- A midnight-crossing window (`22:00`→`06:00`) denies at **every** hour,
+  because the comparison is `start <= current <= end`
+  (`time_of_day.py:63`). It fails in the safe direction, silently, and makes
+  the engine unusable for precisely the after-hours window a KVM needs.
+- **Skip-on-missing-context fails OPEN**: `require_mfa` in `block` mode with
+  the MFA field unset returns `allow`. For kazbek that default must be
+  inverted — absent context is a denial, not a pass.
+
+Enforcement is a pure library — the caller's problem. The sibling
+`KVMFleet/agent` (Go, 3968 lines) is a verbatim reverse proxy for
+kvmd/Janus/streamer; searching it for authorization finds only TLS-policy
+comments and an IPMI *port* allowlist. So KVM Fleet also enforces at the API
+and tunnels everything else undifferentiated. That is corroboration of the
+thesis in §2, not a model to copy.
+
+### The call: reinvent the engine, lift the vocabulary and the tests
+
+Adopt neither engine. Lift, specifically:
+
+- the `apply(rule, ctx) -> reason | nil` one-method constraint interface —
+  the right shape, and it composes;
+- the constraint **vocabulary**, including `max_sessions` and `source_cidr`,
+  which `docs/modules/permissions.md` does not currently list and probably
+  should;
+- the `dry_run → warn → block` rollout ladder — a constraint you cannot
+  deploy in observe-mode first will not get deployed;
+- fail-closed-on-exception, and its four mutation tests for that behaviour;
+- decision results carrying `policy_id` / `policy_name` / `reason`, which is
+  what makes an audit trail answer "why";
+- the test-corpus *shape*: timezone edges, naive-datetime-is-UTC, a property
+  test over the whole day, and "warn does not short-circuit block".
+
+Both defects above become test cases we must pass on day one.
+
+**Caveat on this section:** the KVMFleet test suite was **not executed** — no
+pytest in this container and `pip install` timed out against
+`files.pythonhosted.org`. The 29-test count is a grep. The two defects above
+were confirmed by direct `evaluate()` runs; everything else here is
+read-from-source.
+
+## 4b. Licence — this is not GPLv3
+
+`LICENSE` in this tree is **Business Source License 1.1** (Licensor: GL.iNet;
+Licensed Work: "GLKVM Cloud"), with an Additional Use Grant limited to
+"non-production purposes, including development, testing, personal, or
+academic use", and a Change Date of **2030-01-01**, on which it converts to
+GPLv3 (`LICENSE:1`, `:12`, `:14`).
+
+The kazbek README drafted for this project states "GPLv3, inherited from
+`glkvm-cloud`". That is **incorrect** — GPLv3 is the *future* licence of the
+upstream, from 2030. Until then the inherited code is BUSL-1.1 and
+production use is not granted.
+
+This is not an item-1 question but it is load-bearing for the whole project —
+"self-hosted, you run it yourself" is a production-use claim — and it was
+found while measuring item 1, so it is recorded here rather than dropped.
+It needs an owner decision and a DECISIONS entry; this document does not make
+one. (Confirmed independently against the tree's own `LICENSE`; the upstream
+tag `v2.8.0` carries the same.)
+
+## 4c. Corrections to the sub-agent research pass
+
+Recorded because rule 1 applies to sub-agents too:
+
+- The research pass reported **15** permission keys. The tree has **14**
+  (`grep -c 'Key = \"' internal/domain/permission/model.go`). The count in
+  §1 is the measured one.
+- It reported the inherited engine as 102 total / 78 code lines. 102 total is
+  confirmed; the 78 was not re-derived here and is not relied on.
+
+## 4d. Test debt carried out of Phase 0
+
+`internal/server/http.go:216` — the devid-mismatch check that did not block
+(fixed in this branch, see the commit) ships **without** a regression test,
+because `internal/server` has no harness able to stand up a device session and
+a proxy conn. The item-1 test harness must carry a fails-on-removal case for
+it: delete the `return`, and a test must go red.
 
 ---
 
