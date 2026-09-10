@@ -114,3 +114,60 @@ adopt-and-harden needs more.
 These land together — gut-now-replace-later breaks the console.
 *Reopens if:* a genuine need for arbitrary-host proxying appears; it returns as
 its own capability with its own threat-model entry, never as a parameter.
+
+## D-013 — A device's claims about itself are metadata, never authorization inputs
+D-002 took device identity from the client certificate instead of a shared
+token. That was correct, but it was written as a **specific swap**, not as a
+rule — which is why three instances of the same defect survived it:
+
+- **client type** — read from the device's own info message and used to
+  classify that device's sessions (fixed: recorded server-side once, not
+  device-updatable).
+- **the register message** — id, MAC, group, heartbeat, all device-supplied.
+  D-002 already says these are "metadata to check against the cert"; this
+  generalises *why*.
+- **two-step approval** (`/auth/two_step_approve`, `auth_required=False` on the
+  firmware) — a presence signal the device asserts about itself.
+
+They are one defect: **a claim authored by the device, consumed by the server
+as if it were a fact.** Pinned mTLS establishes *which* device is speaking. It
+does not make what that device says about itself true.
+
+**The rule.** Anything that decides
+- what a subject may do,
+- which server path handles a session, or
+- whether presence was demonstrated
+
+must resolve from **server-side state** or from **the certificate**. A
+device-supplied value may be stored, displayed, logged as a claim, and checked
+for divergence — never consulted to make one of those three decisions.
+
+**The test for the next person:** *if the device lied about this field, would
+the server do something different?* If yes, it is an authorization input and
+this rule applies. If it only changes what is displayed or recorded, it is
+metadata.
+
+This pre-answers a question `requires_presence` would otherwise reach:
+**presence a device can self-assert is not presence.** A ceremony built on the
+firmware's two-step approval satisfies the letter of the constraint and none of
+its purpose. *Reopens if:* never — this is the generalisation of D-002, and
+D-002 does not reopen.
+
+## D-014 — `internal/authz/` stays portable, and that is load-bearing
+The capability model is built as a package with its own seam and **no
+dependency on GL-original code beyond a defined interface**. It consumes
+subjects, capabilities, scopes and targets as its own types and is handed them;
+it does not reach into the inherited domain, store, or HTTP layers.
+
+This is not tidiness. The licensing measurement (`docs/LICENSING.md`) found the
+expensive inherited management plane is GL-original and BUSL-encumbered, while
+the transport kazbek actually swaps is MIT. Keeping the authorization spine
+portable means it **survives any of the three licence outcomes** — grant, wait,
+or reopen D-001 — which is what takes the licence question off the critical
+path and lets Phases 1-3 proceed while it is resolved.
+
+Concretely: a dependency from `internal/authz/` into GL-original code is a
+defect to be removed, not a convenience to be accepted, and the review for each
+phase checks it. *Reopens if:* the licence question resolves in a way that
+makes the inheritance permanent — and even then portability costs little enough
+to keep.
