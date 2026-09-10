@@ -1,22 +1,7 @@
-package fixtures
+package authz
 
 // shapes.go
 //
-// PROVISIONAL — OWNED BY THE PHASE 1 AUTHORIZATION CORE.
-//
-// Every type in this file is a placeholder. The capability engine for roadmap
-// item 1 does not exist yet, so the fixtures had to be written against
-// something; these are that something. The core author should replace, rename,
-// or re-home them freely — if the core defines its own Grant/Scope/Decision,
-// delete these and retype the fixtures against the real ones. Nothing outside
-// internal/authz/fixtures depends on them.
-//
-// They are derived from docs/modules/permissions.md and D-009, NOT from the
-// inherited internal/domain/permission package. That package is a role -> flat
-// key map with no scope and no constraints; the model here is
-// grant = (subject, capability, scope, constraints?) with an explicit effect,
-// because that is what item 1 replaces it with. Do not reintroduce a role
-// dimension here to make the old engine fit.
 
 import (
 	"context"
@@ -215,9 +200,6 @@ type TimeWindow struct {
 
 // Contains reports whether the instant falls inside the window.
 //
-// PROVISIONAL: the core may well evaluate windows itself; this exists so the
-// window builders below can be written and self-checked. If the core has its
-// own evaluator, delete this and keep the builders pointed at it.
 func (w TimeWindow) Contains(t time.Time) bool {
 	loc := w.Location
 	if loc == nil {
