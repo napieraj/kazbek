@@ -103,12 +103,39 @@ firmware side must expose them distinguishably.
 
 ---
 
+## The membership rule for this list — read before adding to it
+
+An item belongs here **only if kazbek cannot reach it from the server side.**
+That is a narrower test than "it is a bypass", and the difference is worth
+stating because the next reader will otherwise see an inconsistency and
+helpfully add `/streamer` back.
+
+**`/streamer` is contained by architecture, not by a firmware fix.** Under
+D-011, a session is constructed with only its permitted channels demuxed — a
+session lacking `view`/`hid.input` gets a connection with no video arm wired at
+all. `/streamer` is then **unreachable** through anything kazbek builds, not
+merely ungated. There is nothing for the firmware to fix on kazbek's account.
+
+The four items above fail that test for a specific reason: **each is an
+operation that never crosses a connection kazbek constructs.** The mux moves on
+a keystroke inside a VNC session; `skip_verify` is a parameter on a route the
+device serves; `serial` widens to `/dev/*` inside the device; the fingerbot
+presses a physical button. No session-construction discipline on the server can
+see any of them, so the enforcement has to be on the device.
+
+So the test is: *would this still happen if every kazbek session were
+constructed with exactly the right channels and nothing else?* If yes, it goes
+here. If no, it is contained already.
+
 ## Not on this list
 
 The `/streamer` bypass, the `gui_*` peer-exe routes, `/auth/two_step_approve`
 being `auth_required=False`, and the rest of the bypass index in
-`permissions-capabilities.md` §3. Those are real, but they are the reason
-kazbek does not trust the device's own auth plane at all — they are arguments
-for the trusted tier, not a firmware backlog. The four items above are
-different: each one is a thing kazbek **cannot** enforce from the server side,
-so the firmware has to.
+`permissions-capabilities.md` §3 — all contained by the rule above, and all
+arguments for the trusted tier rather than a firmware backlog.
+
+One caveat on `/auth/two_step_approve`: it is contained *as an authentication
+bypass*, but if `requires_presence` is ever built on the firmware's two-step
+approval, this becomes a first-class item on this list. Presence that the
+device can self-assert is not presence. Flagged now so the constraint work does
+not discover it later.
