@@ -110,11 +110,18 @@ answer for the interim narrowing (`docs/modules/web-proxy-disposition.md`).
 but not the device's own loopback — where a box's unauthenticated internal
 services live, gated by nothing but "you are already on this box".
 
-The source read says this is probably small on this firmware: kvmd, the
-streamer and pst use **unix sockets** (`configs/nginx/kvmd.ctx-http.conf:2,6`),
-and the TCP services bind on all interfaces anyway. But a shipped image runs
-binaries absent from this tree — `webrtc_client`, `gl-pion`, `ustreamer`,
-`atxpower`, `fingerbot` — plus the closed upstream userland.
+**Half of this is already settled and must not be re-opened by this item.**
+kvmd, the streamer and pst use **unix sockets**
+(`configs/nginx/kvmd.ctx-http.conf:2,6`), which are structurally unreachable
+through an HTTP proxy at any port — not merely "did not appear in a scan". The
+TCP services that exist bind on all interfaces anyway. That result is permanent
+and verifiable from configuration.
+
+What this item measures is the rest: a shipped image runs binaries absent from
+this tree — `webrtc_client`, `gl-pion`, `ustreamer`, `atxpower`, `fingerbot` —
+plus the closed upstream userland. Per AGENTS.md rule 11 the source search
+proves the absence of callers, not of mechanisms. This enumeration can only
+**add** listeners to the set; it cannot subtract the socket result.
 
 **Action:** `ss -ltnp` on a real unit, in the shipped configuration. Record
 every listener, its bind address, and the process. That single enumeration

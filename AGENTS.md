@@ -59,6 +59,22 @@ device-trust core.
     decision (a new module's shape, a trust-boundary change, the first PR of a
     research-grade item) stops for review. Don't land a design step unreviewed.
 
+11. **A source search proves the absence of a *caller*, never of a mechanism.**
+    `grep` finds references in this tree. It cannot see a binary the tree
+    invokes but does not contain, a service the image starts, or a path
+    implemented outside the repo. Three firmware findings turned on exactly
+    this — the rtty client, the updater binaries, and the flash trigger, all
+    referenced by code here and living elsewhere — and kazbek has the identical
+    shape in the device-side tunnel client, which is not in this repo either.
+
+    So "absent, searched X" is a statement about *callers*. To claim a mechanism
+    does not exist you need runtime evidence (`ss -ltnp`, a process list, a real
+    unit); without it, say which half you measured. And **split a finding whose
+    halves have different lifetimes** — the part verifiable from source holds in
+    CI forever, the part needing a unit stays open until someone has one.
+    Written as one undifferentiated "partial", the verifiable half gets
+    re-litigated by whoever reads it next.
+
 ## Where to look
 - `docs/ARCHITECTURE.md` — core + modules, the boundary, the connection swap.
 - `docs/DECISIONS.md` — settled calls; read before proposing a change to one.

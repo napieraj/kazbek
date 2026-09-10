@@ -117,37 +117,49 @@ where a box's unauthenticated internal services live — services whose only
 access control was "you must already be on this box". That is the `/streamer`
 class again, one layer in.
 
-### What the firmware tree says (partial — see the caveat)
+### Finding A — kvmd's internal IPC is unix sockets, so a port proxy cannot reach it
 
-Measured against `glkvm-debloat`, this risk looks **smaller on this firmware
-than the general case**, because its internal IPC is not TCP:
+**Lifetime: permanent. Verifiable from configuration, holds in CI.**
 
-- kvmd ↔ nginx and the streamer talk over **unix sockets**, not loopback TCP —
-  `configs/nginx/kvmd.ctx-http.conf:2` (`unix:/run/kvmd/kvmd.sock`) and `:6`
-  (`unix:/run/kvmd/ustreamer.sock`). The `pst` client's
-  `http://localhost:0/...` (`kvmd/clients/pst.py:56,72`) is the aiohttp
+kvmd, the streamer and pst do not listen on loopback TCP at all:
+
+- `configs/nginx/kvmd.ctx-http.conf:2` — `server unix:/run/kvmd/kvmd.sock`
+- `configs/nginx/kvmd.ctx-http.conf:6` — `server unix:/run/kvmd/ustreamer.sock`
+- `kvmd/clients/pst.py:56,72` — `http://localhost:0/...` is the aiohttp
   unix-connector idiom, not a TCP port.
-- The TCP services shipped — nginx (`configs/nginx/nginx.conf.mako:42-72`),
-  janus, ipmi, vnc — bind on all interfaces, not loopback-only, so a loopback
-  proxy reaches nothing through them that the segment could not already reach.
 
-A service reachable **only** via loopback TCP is the thing that would make port
-restriction urgent, and none is visible in the tree.
+This is not "they did not show up in a scan". A unix socket is **structurally
+unreachable through an HTTP proxy at any port** — there is no port that reaches
+it. So for the core daemons, a loopback port allowlist would be protecting
+against nothing, and no runtime evidence can change that.
 
-> **Caveat (rule 2): this measurement is incomplete and must not be read as a
-> clean bill.** It is a source read, not a runtime enumeration. A shipped image
-> runs binaries that are not in this tree (`webrtc_client`, `gl-pion`,
-> `ustreamer`, `atxpower`, `fingerbot`) plus whatever the closed upstream
-> userland starts. The authoritative list is `ss -ltnp` on a real unit, and
-> **there is no unit on this bench** — so this result is "nothing found in the
-> source", not "nothing listens".
+The TCP services that do exist — nginx
+(`configs/nginx/nginx.conf.mako:42-72`), janus, ipmi, vnc — bind on all
+interfaces rather than loopback-only, so a loopback proxy reaches nothing
+through them that the managed segment could not already reach.
+
+### Finding B — the closed userland is unmeasured, and can only *add* listeners
+
+**Lifetime: open until someone runs it on a unit.**
+
+A shipped image runs binaries that are not in this tree — `webrtc_client`,
+`gl-pion`, `ustreamer`, `atxpower`, `fingerbot` — plus whatever the closed
+upstream userland starts. Per AGENTS.md rule 11, the source search above proves
+the absence of *callers*, not of mechanisms.
+
+The authoritative list is `ss -ltnp` on a real unit, and **there is no unit on
+this bench**. Note the direction of the uncertainty: Finding B can only add
+listeners to the set, never subtract Finding A's socket result. So the residual
+risk is bounded below by "nothing", not unknown in both directions.
 
 ### Consequence
 
-Port restriction stays deferred, but as a **blocked measurement rather than a
-judgement call** — it is on the firmware worklist. When that list is run on a
-real unit, the same enumeration produces both the residual-risk answer and the
-named-service list the replacement needs. One measurement, two uses.
+Port restriction stays deferred as a **blocked measurement rather than a
+judgement call** — firmware worklist item 5. When that runs on a real unit, the
+same enumeration produces both Finding B's answer and the named-service list
+the replacement needs. One measurement, two uses.
+
+Finding A does not wait on it and should not be re-opened by it.
 
 Mutation-checked: deleting the `ip.IsLoopback()` guard turns
 `TestHTTPProxyAddrIsLoopbackOnly` red on all six off-device cases (managed
