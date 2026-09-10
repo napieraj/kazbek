@@ -51,15 +51,30 @@ func (r *DeviceMetaRepo) MarkOnline(ctx context.Context, deviceID string) error 
     ).Error
 }
 
-func (r *DeviceMetaRepo) UpdateClient(ctx context.Context, deviceID, client string) error {
+// SetClientIfUnset records a device's client type ONCE and never changes it.
+//
+// The client type is a claim the device makes about itself, and it is consumed
+// server-side to classify the device's own sessions. If a device could rewrite
+// it at will, the device would be choosing how the server classifies it — so
+// this is deliberately first-write-wins, matching UpdateDescriptionIfEmpty
+// below. A later claim of a different type is ignored by this UPDATE; the
+// caller is expected to notice the divergence and log it, because a device
+// changing its self-description is a signal worth keeping.
+//
+// Do NOT relax this to an unconditional UPDATE. The previous version wrote
+// whenever the value differed, which made the field device-controlled for the
+// life of the device.
+//
+// This is an interim owner. Once provisioning (roadmap item 3) establishes
+// device facts at enrolment, the client type should be set by that ceremony
+// and this becomes a fallback for pre-enrolment records.
+func (r *DeviceMetaRepo) SetClientIfUnset(ctx context.Context, deviceID, client string) error {
     if r.db == nil {
         return fmt.Errorf("gorm db is nil")
     }
-    // Only write when the value actually changed, so reconnects of a device
-    // whose client is unchanged don't generate a redundant write.
     return r.db.WithContext(ctx).Exec(
-        `UPDATE devices SET client=? WHERE ddns=? AND (client IS NULL OR client <> ?)`,
-        client, deviceID, client,
+        `UPDATE devices SET client=? WHERE ddns=? AND (client IS NULL OR client='')`,
+        client, deviceID,
     ).Error
 }
 
