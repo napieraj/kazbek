@@ -18,7 +18,7 @@ package fixtures
 // The two tests docs/modules/permissions.md calls out are both expressible:
 //
 //	port isolation — Case{Req: Ask("alice", CapATX...).OnPort("kvm-1", 2), Want: false,
-//	                      Device: dev, Do: func(d *RM4PE) error { return d.ATX(2, ATXPowerOffHard) }}
+//	                      Device: dev, Do: func(d *RM4PE, _ Engine) error { return d.ATX(2, ATXPowerOffHard) }}
 //	stream bypass  — Case{Req: Ask("bob", CapScreenControl).OnPort("kvm-1", 2).At(PointStream),
 //	                      Want: false, AlsoDoOnDeny: true, Do: pullVideoThroughTheStreamWiring}
 
@@ -59,7 +59,12 @@ type Case struct {
 	// Do is the operation the decision gates: the thing the caller would
 	// actually do to the hardware. The runner invokes it ONLY on an allow (or
 	// on a deny too, if AlsoDoOnDeny is set) and requires it to succeed.
-	Do func(d *RM4PE) error
+	//
+	// It is handed the engine the runner just asked, so a Do that models the
+	// core's stream/tunnel wiring consults the SAME engine — including a
+	// mutated one during AssertLoadBearing. That is what lets a mutation
+	// expose wiring that decides for itself instead of asking.
+	Do func(d *RM4PE, e Engine) error
 
 	// AlsoDoOnDeny makes the runner invoke Do even when the decision denies,
 	// and require it to FAIL and to leave no successful device call behind.
@@ -132,7 +137,7 @@ func evaluate(ctx context.Context, e Engine, c Case) []string {
 
 	switch {
 	case got.Allow:
-		if err := c.Do(c.Device); err != nil {
+		if err := c.Do(c.Device, e); err != nil {
 			add("gated operation failed after an allow: %v", err)
 		}
 		for _, call := range c.Device.CallsSince(before) {
@@ -148,7 +153,7 @@ func evaluate(ctx context.Context, e Engine, c Case) []string {
 			}
 		}
 	case c.AlsoDoOnDeny:
-		err := c.Do(c.Device)
+		err := c.Do(c.Device, e)
 		if err == nil {
 			add("BYPASS: the decision denied but the gated operation succeeded anyway — the check is not on the path the caller actually takes")
 		}
