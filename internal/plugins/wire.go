@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/json"
+	"strconv"
 )
 
 // Wire constants. See contract/plugins/wire.md.
@@ -193,12 +194,49 @@ func DecodeChunk(body []byte) (*Chunk, error) {
 	return &Chunk{Seq: binary.BigEndian.Uint32(body[0:4]), Flags: flags, Data: data}, nil
 }
 
-// CanonicalBody encodes a JSON body in canonical form: keys sorted bytewise
-// (guaranteed by declaring struct fields in sorted order), no insignificant
-// whitespace, and no HTML escaping — Go escapes <, > and & by default, which
-// Python's json does not, and the two must agree byte for byte.
-func CanonicalBody(v any) ([]byte, error) {
+// EncodeJSONBody encodes a JSON message body in canonical form: keys sorted
+// bytewise (guaranteed by declaring struct fields in sorted order), no
+// insignificant whitespace, and no HTML escaping — Go escapes <, > and & by
+// default, which Python's json does not, and the two must agree byte for byte.
+//
+// Every body type in this package already carries V, so the version is
+// stamped by construction rather than by this function.
+func EncodeJSONBody(v any) ([]byte, error) {
 	return canonicalJSON(v)
+}
+
+// DecodeJSONBody parses a JSON message body and enforces the protocol version.
+//
+// A receiver that does not recognise "v" refuses rather than guessing: a
+// message from a future protocol is not a message with unknown fields to
+// ignore, it is a message whose meaning is unknown.
+func DecodeJSONBody(body []byte, into any) error {
+	// Probe the object shape first so a non-object body reports as malformed
+	// rather than as an unmarshal type error, which is what the Python side
+	// reports for the same input.
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return refuse(CodeMalformed, "body is not a JSON object: %v", err)
+	}
+	var probe struct {
+		V *int `json:"v"`
+	}
+	if err := json.Unmarshal(body, &probe); err != nil {
+		return refuse(CodeMalformed, "body is not JSON: %v", err)
+	}
+	if probe.V == nil || *probe.V != ProtocolVersion {
+		got := "absent"
+		if probe.V != nil {
+			got = strconv.Itoa(*probe.V)
+		}
+		return refuse(CodeUnsupportedVersion, "body version %s", got)
+	}
+	if into != nil {
+		if err := json.Unmarshal(body, into); err != nil {
+			return refuse(CodeMalformed, "body decode: %v", err)
+		}
+	}
+	return nil
 }
 
 // Reassembler accumulates payload chunks into a bundle.
