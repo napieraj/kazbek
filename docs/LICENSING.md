@@ -110,6 +110,54 @@ it implies for a downstream production deployment.
    premise from a different side. A clean-room management plane over the
    MIT-traceable transport is a different project than the one D-001 approved.
 
+## The measurement that actually resolves this
+
+The licence question looks legal and is mostly **economic**. D-001 traded
+"inherit weeks of work" against "the connection swap is contained". The BUSL
+finding does not touch that technical argument — the seam really is thin, the
+plane really is weeks of work. It attacks the *price*. So the question that
+resolves it is one we can measure: **after roadmap items 1–5, how much
+GL-original code do we still intend to run?**
+
+Measured against this tree (non-test Go lines, re-derived this session):
+
+| GL-original area | lines | fate after items 1–5 |
+|---|---|---|
+| `internal/domain/permission` + the `Require` middleware | ~110 | **replaced** by item 1 |
+| `internal/server/oidc.go` | 524 | thin wrapper over `go-oidc`; **cheap to rewrite** |
+| LDAP path (in `internal/http`, `internal/domain`) | — | thin over `go-ldap`; cheap to rewrite |
+| device-log / audit (`internal/domain`, `internal/store`, handlers) | — | **being rebuilt** (append-only, D-011 decisions) |
+| `/web` proxy handling | — | **gutted** (D-012) |
+| `internal/store/` (sqlite repos, schema) | 2,036 | **survives** |
+| `internal/http/` handlers + DTOs (CRUD) | 2,550 | **mostly survives** |
+| `internal/domain/` (groups, users, relations, notifications) | 1,157 | **mostly survives** |
+| `ui/src` | 14,103 | **survives** — and it is the single largest asset |
+
+So what the inheritance is *actually* worth after item 5 is: **the Vue UI, the
+sqlite store, and the CRUD/domain layer around groups, users and relations.**
+Real value — the UI especially, at ~14k lines — but a much smaller and much
+more ordinary body of work than "the management plane" implies. Authorization,
+audit and the device proxy, the three parts with security weight, are all
+things kazbek replaces anyway.
+
+Note the direction this points: the encumbered surface **shrinks as the roadmap
+executes**. That is the opposite of the usual dependency trap, and it means
+time is on our side rather than against us.
+
+## Recommended, and not blocking
+
+1. **Ask GL for a production-use grant** for self-hosted, non-commercial
+   deployment. Low cost, and the security advisory (the committed private key,
+   `skip_verify`, the serial/ATX domination) gives standing to ask. A draft
+   request is in `docs/gl-disclosure.md`.
+2. **Do not build on the nine MIT-header files** beyond what item 0 already
+   touches — the conflict there is GL's to resolve, and adding to it is
+   gratuitous.
+3. **Proceed with Phases 1–3 now.** D-014 makes `internal/authz/` portable with
+   no dependency on GL-original code beyond a defined interface, so the
+   authorization spine survives a grant, a wait, or a reopened D-001 alike. The
+   licence is therefore **off the critical path**, not resolved.
+
 **No decision is recorded here.** `docs/DECISIONS.md` deliberately carries no
 licence entry until one is taken — asserting an answer we have not established
 would be the "verify as code, not as doc" failure the standing rules warn
