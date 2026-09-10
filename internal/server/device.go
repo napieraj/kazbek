@@ -364,7 +364,20 @@ func (dev *Device) ReadMsg() (byte, []byte, error) {
 	return typ, dev.readBuf, nil
 }
 
+// msgBodyMax is the largest sid+data an rtty envelope can describe: the length
+// field is a uint16. Exceeding it used to wrap silently -- a 70000-byte body
+// declared 4464 and wrote all 70000 bytes with a nil error, so the peer read
+// 4464 bytes as the message and then parsed the remaining ~65k as further
+// frames. That is frame desynchronisation, not truncation, and it is reachable
+// from anything that can make a large message. Refuse instead of wrapping.
+const msgBodyMax = 0xFFFF
+
 func (dev *Device) WriteMsg(typ byte, sid string, data []byte) error {
+	if len(sid)+len(data) > msgBodyMax {
+		return fmt.Errorf("rtty message body %d bytes exceeds the uint16 envelope (%d)",
+			len(sid)+len(data), msgBodyMax)
+	}
+
 	bb := bytebufferpool.Get()
 	defer bytebufferpool.Put(bb)
 
