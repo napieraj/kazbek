@@ -111,10 +111,43 @@ This answers one of the three open measurements: **the console only ever
 proxies to the device itself.** That is the more boring of the two possible
 answers, and it is the one that makes the replacement simple.
 
-**Ports are deliberately not restricted yet.** The allowlist has to come from
-the firmware's real service list rather than be guessed, and guessing it would
-break device-local access that the named-service channel is meant to preserve.
-Loopback-only already removes the segment-wide reach, which was the live risk.
+**Ports are not restricted yet, and the residual risk is named.** Loopback-only
+removed the *segment*; it did not remove the device's own loopback, which is
+where a box's unauthenticated internal services live — services whose only
+access control was "you must already be on this box". That is the `/streamer`
+class again, one layer in.
+
+### What the firmware tree says (partial — see the caveat)
+
+Measured against `glkvm-debloat`, this risk looks **smaller on this firmware
+than the general case**, because its internal IPC is not TCP:
+
+- kvmd ↔ nginx and the streamer talk over **unix sockets**, not loopback TCP —
+  `configs/nginx/kvmd.ctx-http.conf:2` (`unix:/run/kvmd/kvmd.sock`) and `:6`
+  (`unix:/run/kvmd/ustreamer.sock`). The `pst` client's
+  `http://localhost:0/...` (`kvmd/clients/pst.py:56,72`) is the aiohttp
+  unix-connector idiom, not a TCP port.
+- The TCP services shipped — nginx (`configs/nginx/nginx.conf.mako:42-72`),
+  janus, ipmi, vnc — bind on all interfaces, not loopback-only, so a loopback
+  proxy reaches nothing through them that the segment could not already reach.
+
+A service reachable **only** via loopback TCP is the thing that would make port
+restriction urgent, and none is visible in the tree.
+
+> **Caveat (rule 2): this measurement is incomplete and must not be read as a
+> clean bill.** It is a source read, not a runtime enumeration. A shipped image
+> runs binaries that are not in this tree (`webrtc_client`, `gl-pion`,
+> `ustreamer`, `atxpower`, `fingerbot`) plus whatever the closed upstream
+> userland starts. The authoritative list is `ss -ltnp` on a real unit, and
+> **there is no unit on this bench** — so this result is "nothing found in the
+> source", not "nothing listens".
+
+### Consequence
+
+Port restriction stays deferred, but as a **blocked measurement rather than a
+judgement call** — it is on the firmware worklist. When that list is run on a
+real unit, the same enumeration produces both the residual-risk answer and the
+named-service list the replacement needs. One measurement, two uses.
 
 Mutation-checked: deleting the `ip.IsLoopback()` guard turns
 `TestHTTPProxyAddrIsLoopbackOnly` red on all six off-device cases (managed

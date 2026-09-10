@@ -101,6 +101,30 @@ firmware side must expose them distinguishably.
   `atx.*`, by a path no ATX capability touches. `POST /fingerbot/upgrade`
   (`:414`) also flashes its firmware.
 
+## 5. Enumerate what actually listens on loopback (needs a real unit)
+
+**Blocks:** the port allowlist for the `/web` replacement, and the residual-risk
+answer for the interim narrowing (`docs/modules/web-proxy-disposition.md`).
+
+`/web` is now loopback-only, which removes the managed segment from its reach
+but not the device's own loopback — where a box's unauthenticated internal
+services live, gated by nothing but "you are already on this box".
+
+The source read says this is probably small on this firmware: kvmd, the
+streamer and pst use **unix sockets** (`configs/nginx/kvmd.ctx-http.conf:2,6`),
+and the TCP services bind on all interfaces anyway. But a shipped image runs
+binaries absent from this tree — `webrtc_client`, `gl-pion`, `ustreamer`,
+`atxpower`, `fingerbot` — plus the closed upstream userland.
+
+**Action:** `ss -ltnp` on a real unit, in the shipped configuration. Record
+every listener, its bind address, and the process. That single enumeration
+yields both the residual-risk answer and the **named-service list** the
+replacement channel needs, so it is worth doing once and properly rather than
+guessing twice.
+
+Until it exists, the `/web` port allowlist is a blocked measurement, not a
+judgement call.
+
 ---
 
 ## The membership rule for this list — read before adding to it
