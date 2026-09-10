@@ -80,21 +80,29 @@ multi-port view is round-robin or server-side compositing either way. That is a
 session which moves the channel continuously and on purpose, against an
 interlock whose whole job is to react when the channel moves.
 
-Three candidate answers, each with a cost:
+**(2) is rejected, not costed.** "A distinct capability that subsumes port
+scope" is not a capability — it is the interlock with a documented bypass.
+D-007's logic applies directly: the vocabulary *is* the security boundary, so
+an escape hatch inside the vocabulary is the vocabulary failing. A grant whose
+meaning is "ignore the check" cannot be reasoned about by the check, and every
+subsequent question about it ("who may hold it?", "does four-eyes apply?")
+is that failure being re-litigated. It is off the table.
 
-1. **A screenwall session needs a grant on every port it displays.** Honest,
-   and it makes a screenwall a privileged thing rather than a view. Probably
-   right.
-2. **A distinct capability that subsumes port scope.** Simpler, but it is a
-   capability whose meaning is "ignore the interlock" — the shape of every
-   exception that later turns out to be the hole.
-3. **The interlock distinguishes *this session moved the mux* from *the mux
-   moved under this session*.** Most precise, most state, and it needs the
-   `port.switch` gating to exist so the mover is attributable at all.
+That leaves two, and they compose rather than compete:
 
-Answer this **before** building the interlock. Discovering it afterwards means
-either a screenwall that cannot work or an exception carved into the interlock
-under delivery pressure.
+1. **A screenwall session needs a grant on every port it displays.** This is
+   the answer. It makes a screenwall a *privileged* thing rather than a view,
+   which is correct — seeing four consoles at once is strictly more than seeing
+   one, and the grant should say so. It also degrades sensibly: a subject with
+   two of four ports gets a two-tile wall, not a denial.
+2. **The interlock distinguishes *this session moved the mux* from *the mux
+   moved under this session*.** Needed anyway, and not only for screenwall: it
+   is what makes a torn-down connection attributable, and it presupposes the
+   `port.switch` gating from the firmware worklist. Without it the interlock
+   cannot tell a legitimate walk from a hostile one.
+
+So the interlock is built with (2) as its mechanism and (1) as the screenwall's
+grant shape. Neither is deferred to item 7.
 
 **Note the class of the finding.** The mux moves with no API call and no route
 to gate. That is the same class as `/streamer`: *enforcement points that live at

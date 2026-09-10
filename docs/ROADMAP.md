@@ -95,18 +95,17 @@ interlock — the session's grant is checked against the currently active channe
 and the connection is torn down when the channel moves. A screenwall session
 moves the channel continuously and deliberately.
 
-So: is a screenwall session expressible under tier-conditional port scope? The
-candidate answers each cost something:
-- it requires a grant on **every** port it displays (honest, and makes a
-  screenwall a privileged thing — probably right);
-- it is a distinct capability that subsumes port scope (simpler, but it is a
-  capability that means "ignore the interlock", which is the shape of every
-  bad exception);
-- the interlock distinguishes *the session moved the mux* from *the mux moved
-  under the session* (most precise, most state).
+So: is a screenwall session expressible under tier-conditional port scope?
+**Answered, in `docs/modules/permissions.md` under Port scope** — a screenwall
+session needs a grant on every port it displays, and the interlock is built to
+distinguish *this session moved the mux* from *the mux moved under it*.
 
-**The interlock design must answer this before it is built, not discover it
-afterwards.** Recorded in `docs/modules/permissions.md` under Port scope.
+A third option — a capability that subsumes port scope — was rejected rather
+than costed: that is not a capability, it is the interlock with a documented
+bypass, and D-007's fixed-vocabulary logic makes an escape hatch inside the
+vocabulary a failure of the vocabulary.
+
+Both parts land with the item-1 interlock, not here.
 
 ## Blocking open questions
 - **Which devices are on the bench?** Per-model, pairing (screen), and per-port
