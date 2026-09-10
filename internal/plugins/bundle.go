@@ -85,6 +85,47 @@ func checkBundlePath(name string) error {
 			return refuse(CodeBundleUnsafePath, "non-printable-ASCII in %q", name)
 		}
 	}
+	return checkNotImportableAheadOfSource(name)
+}
+
+// shadowingSuffixes are the suffixes CPython's FileFinder resolves ahead of, or
+// instead of, a .py of the same module name. Fixed rather than derived, because
+// the device half must refuse exactly this set and a list that moved with the
+// device's CPython version could not be mirrored here. ".so" covers ".abi3.so"
+// and ".cpython-<ver>-<plat>.so", both of which end with it.
+var shadowingSuffixes = []string{".pyc", ".pyo", ".pyd", ".so"}
+
+// checkNotImportableAheadOfSource refuses any entry the device loader could
+// import in preference to, or instead of, the declared source entry.
+//
+// The device loader imports by dotted name, and CPython resolves
+// EXTENSION_SUFFIXES before SOURCE_SUFFIXES before BYTECODE_SUFFIXES. Two
+// consequences were measured on the device side, and both break the
+// correspondence between the source a reader can audit and the code that runs:
+// a .so beside a .py wins outright, and a __pycache__ .pyc whose header
+// matches its .py is executed instead of the source even in a fresh
+// interpreter.
+//
+// Readback cannot catch either. Readback compares the placed tree against the
+// bundle the server still holds, and the shadowing file is in that bundle, so
+// both sides agree exactly -- invariant 4 failing in the silent direction. The
+// refusal therefore belongs at admission, on both halves.
+//
+// The server refusing is not redundant with the device refusing: invariant 5's
+// second half is that each verifies independently, so a server that pushed one
+// of these would be pushing what it could not verify.
+func checkNotImportableAheadOfSource(name string) error {
+	for _, seg := range strings.Split(name, "/") {
+		if seg == "__pycache__" {
+			return refuse(CodeBundleUnsafeEntry, "bytecode cache directory in %q", name)
+		}
+	}
+	lowered := strings.ToLower(name)
+	for _, suffix := range shadowingSuffixes {
+		if strings.HasSuffix(lowered, suffix) {
+			return refuse(CodeBundleUnsafeEntry, "entry %q would be imported ahead of source", name)
+		}
+	}
 	return nil
 }
 
