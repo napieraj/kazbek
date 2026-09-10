@@ -56,3 +56,23 @@ func GateNamed(name string, m *Manifest, payload []byte) error {
 	}
 	return Gate(v, m, payload)
 }
+
+// AdmitOffer decides whether a plugin.offer is worth transferring, before a
+// plugin.fetch is sent and before any payload chunk moves.
+//
+// It is a distinct check from Gate step 2, not a duplicate of it. Gate step 2
+// compares the *assembled* length against the declared size and can only run
+// once the bytes have arrived; admission compares the *declared* size against
+// the protocol ceiling and runs before any do. Without admission an oversized
+// bundle is transferred in full and only then refused — and because a dropped
+// transfer restarts from chunk 0, size and link reliability multiply, so a
+// bundle too large to transfer must be refused while it is still a claim.
+//
+// Admission neither sees nor needs the payload. That is what distinguishes it
+// from the verify gate, and it is why it can run on the offer alone.
+func AdmitOffer(m *Manifest) error {
+	if m == nil {
+		return refuse(CodeMalformed, "no manifest")
+	}
+	return m.Validate()
+}

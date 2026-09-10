@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -59,6 +60,13 @@ func TestContractSHA256(t *testing.T) {
 		rel, err := filepath.Rel(root, path)
 		if err != nil {
 			return err
+		}
+		// tools/ is machinery, not contract: a cosmetic edit to the generator
+		// must not move the hash and make every repo that has not yet pulled
+		// it report a spurious mismatch. A generator change that actually
+		// changes the vectors still moves the hash, via vectors/.
+		if strings.HasPrefix(filepath.ToSlash(rel), "tools/") {
+			return nil
 		}
 		body, err := os.ReadFile(path)
 		if err != nil {

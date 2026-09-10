@@ -6,6 +6,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -98,8 +100,66 @@ func RequireEntry(files []TreeFile, m *Manifest) error {
 	return refuse(CodeBundleEntryMissing, "bundle has no %q", m.Entry)
 }
 
-// ReadbackFor builds the readback body for a placed tree.
-func ReadbackFor(manifestSHA string, files []TreeFile) *ReadbackBody {
+// ReadPlacedTree re-reads a placed plugin tree from disk.
+//
+// Paths are returned relative to root with POSIX separators, matching the
+// bundle entry paths, so a readback is directly comparable with the bundle the
+// server still holds.
+func ReadPlacedTree(root string) ([]TreeFile, error) {
+	var files []TreeFile
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+		if !info.Mode().IsRegular() {
+			// A symlink appearing under the loader root after placement is
+			// itself a finding, not something to follow and hash.
+			return refuse(CodeBundleUnsafeEntry, "placed entry %q is not a regular file", path)
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		files = append(files, TreeFile{Path: filepath.ToSlash(rel), Data: body})
+		return nil
+	})
+	if err != nil {
+		if CodeOf(err) != "" {
+			return nil, err
+		}
+		return nil, refuse(CodeInstallReadbackMismatch, "read placed tree: %v", err)
+	}
+	return files, nil
+}
+
+// ReadbackFor builds the readback body by re-reading the placed tree from disk.
+//
+// It deliberately takes a root and not the bundle's files: the device must
+// hash what is actually on disk, never the bundle it received. The two agree
+// only in the happy path and differ in exactly the cases readback exists for —
+// a partial write, a failed rename, an overlay that did not survive the ro
+// remount, or a later local edit. Hashing the received bundle would restate
+// what chunk sequencing already proved and would say nothing about the disk.
+//
+// The server derives its expectation from the bundle it still holds. The
+// comparison is meaningful precisely because the two sides are computed from
+// different sources.
+func ReadbackFor(manifestSHA string, root string) (*ReadbackBody, error) {
+	files, err := ReadPlacedTree(root)
+	if err != nil {
+		return nil, err
+	}
+	return readbackOf(manifestSHA, files), nil
+}
+
+func readbackOf(manifestSHA string, files []TreeFile) *ReadbackBody {
 	rb := &ReadbackBody{
 		Entries:    []ReadbackEntry{},
 		SHA256:     manifestSHA,
