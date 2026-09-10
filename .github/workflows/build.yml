@@ -27,10 +27,66 @@ jobs:
           npm install
           npm run build
           cd ..
+      # This step used to be `./build.sh $os $arch`, and that script is not in
+      # the tree. It was added in the squashed import (f955f4f) alongside this
+      # workflow and removed during GL.iNet's restructuring into cmd/, which
+      # left the workflow calling it: `./build.sh: No such file or directory`,
+      # on every push, inherited. Nothing here is a rebrand decision -- the
+      # binary keeps the name the Makefile already gives it.
+      #
+      # The script was stale in three further ways, all of which it would have
+      # carried into any naive restoration:
+      #
+      #   - VERSION came from `grep 'const RttysVersion' main.go`. There is no
+      #     main.go at the root; the constant is internal/server/version.go:3.
+      #   - it did `cp rttys.conf` and `cp rttys.service`. Neither file exists
+      #     anywhere in the tree.
+      #   - it passed `-X main.GitCommit` / `-X main.BuildTime`. Those symbols
+      #     moved to internal/server (version.go:7-8) with the restructuring,
+      #     and a -X against a symbol that does not exist is SILENT: the build
+      #     succeeds and the value is simply never set. Measured both ways --
+      #     with the corrected path the binary logs `Git Commit: abc1234`, with
+      #     `main.GitCommit` it logs no commit line at all.
+      #
+      # Note for whoever checks this next: `strings` on the binary is NOT a
+      # valid check. It finds the value under either path, because the -X flag
+      # text itself is recorded in the embedded build info. Run the binary.
       - name: build
         env:
           target: ${{ matrix.target }}
         run: |
-          os=$(echo $target | awk -F. '{print $1}')
-          arch=$(echo $target | awk -F. '{print $2}')
-          ./build.sh $os $arch
+          set -eu
+          os=$(echo "$target" | awk -F. '{print $1}')
+          arch=$(echo "$target" | awk -F. '{print $2}')
+          version=$(grep 'const RttysVersion' internal/server/version.go | cut -d'"' -f2 | sed 's/^v//')
+          commit=$(git log --pretty=format:"%h" -1)
+          built=$(date +%FT%T%z)
+          dir="rttys-$version-$os-$arch"
+          bin="rttys"
+          [ "$os" = "windows" ] && bin="rttys.exe"
+          mkdir -p "$dir"
+          GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 go build \
+            -ldflags="-s -w -X rttys/internal/server.GitCommit=$commit -X rttys/internal/server.BuildTime=$built" \
+            -o "$dir/$bin" ./cmd/glkvm-cloud
+          ls -l "$dir"
+          echo "version=$version" >> "$GITHUB_ENV"
+          echo "commit=$commit" >> "$GITHUB_ENV"
+          echo "dir=$dir" >> "$GITHUB_ENV"
+          echo "bin=$bin" >> "$GITHUB_ENV"
+      # The guard for the third staleness above, which is the one that fails
+      # silently. Only the native target can run, and that is enough: the ldflag
+      # paths are identical across the matrix.
+      - name: the version stamps actually landed
+        if: matrix.target == 'linux.amd64'
+        run: |
+          set -eu
+          out=$(timeout 20 "./$dir/$bin" 2>&1 | sed 's/\x1b\[[0-9;]*m//g' || true)
+          echo "$out" | head -6
+          echo "$out" | grep -q "Rttys Version: $version"
+          echo "$out" | grep -q "Git Commit: $commit"
+          echo "$out" | grep -q "Build Time: 20"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.dir }}
+          path: ${{ env.dir }}
+          if-no-files-found: error
