@@ -116,3 +116,69 @@ type; chunked payload reassembly; the readback-mismatch path flags.
 Mutation-check invariant 3 (remove refuse-on-fail -> an unverified plugin
 installs -> test goes red) — the load-bearing one; it must have teeth before
 noop is ever in a tree.
+
+---
+
+## Research triage (added post-review)
+
+`docs/research/plugin-architecture.md` is filed as **informing, not normative** —
+see its header, including the two claims that must not be cited without
+independent verification. It was triaged into three buckets; this section is the
+record of that triage.
+
+### Adopted — contract v2
+
+Three schema changes, all zero-crypto, all expensive to retrofit because the
+manifest refuses unknown fields:
+
+- **`revision`** — mandatory monotonic integer. The device refuses any bundle
+  whose revision is not greater than the installed one, at **offer admission**,
+  before any bytes move. The refusal is `state:"refused"`, not `failed`, because
+  nothing touched the disk. This needs no signing model: it is an integer
+  comparison, which is exactly the argument for owning it directly rather than
+  inheriting it buried inside a framework.
+- **Structured `signature` block** — `model` a required enum, `entries` a
+  required list, `threshold` and `expires` optional. v2 accepts `model:
+  hash-only` with empty `entries`; anything else is `manifest.malformed`. Still
+  no crypto — schema plus an enum check. The block is *required* so that
+  "unsigned" and "signature omitted" can never be confused.
+- **`sandbox`**, not `capabilities` — reserved, must be empty. Renamed because
+  kazbek already uses "capability" for `permission.Key` values scoped to
+  *subjects* (`middleware.Require` calls them "capability keys"). What this
+  field will describe is which resources a plugin *process* may reach. Two
+  vocabularies under one word, in a system whose authorization model turns on
+  that word, is a bug waiting to be written.
+
+Also adopted, costing nothing to state: **defence in depth.** The server refuses
+to push a plugin it cannot itself verify, *and* the device independently
+re-verifies on receipt. This is the second half of invariant 5 — a device that
+trusts the server's verdict has made the delivery channel the trust anchor
+again.
+
+### Deferred — the signing module
+
+Research §3b–§3e, the OPA bundle format, key storage, threshold signing,
+Sigstore/Rekor and TUF are recorded in `docs/modules/signing.md` as a survey to
+start from. They are explicitly out of this cycle. The standing line holds: if
+you are writing crypto beyond hashing a blob and comparing it, you have left
+scope.
+
+### Needs measurement first
+
+- **Research §5's generated systemd sandbox does not apply device-side.** The
+  device runs BusyBox init — the firmware's own code shells out to
+  `/etc/init.d/S99rkipc`, `S99tailscale`, `S99gl-pion`, `S80ttyd`, `S99firewall`
+  and `S99gl-cloud`. The `configs/os/services/*.service` units are inherited
+  PiKVM upstream artifacts that do not run on this hardware. Device-side
+  confinement is a separate design question against what the firmware actually
+  offers; server-side systemd for the management tier is a different question
+  again.
+- **`kvmd-pst` survives in the fork, but its launcher does not.** The Python
+  (`kvmd/apps/pst`, `kvmd/apps/pstrun`), the remount helper
+  (`kvmd-helper-pst-remount`), `fstab.find_pst()`, the sudoers entries and the
+  setup.py entry points are all present. Its only launcher is
+  `configs/os/services/kvmd-pst.service`, a systemd unit, and there is no
+  `S`-script equivalent. So the mechanism is adoptable and the launcher is not,
+  and whether the `pst`-tagged partition exists on GL hardware cannot be
+  answered from the repository. That is a device measurement, and it is the
+  first question the device half has to answer.

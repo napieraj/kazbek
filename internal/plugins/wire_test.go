@@ -16,8 +16,9 @@ func TestDecodeJSONBodyEnforcesVersion(t *testing.T) {
 		body string
 		code string
 	}{
-		{"accepts v1", `{"sha256":"abc","v":1}`, ""},
-		{"refuses a future version", `{"sha256":"abc","v":2}`, CodeUnsupportedVersion},
+		{"accepts the current version", `{"sha256":"abc","v":2}`, ""},
+		{"refuses a future version", `{"sha256":"abc","v":3}`, CodeUnsupportedVersion},
+		{"refuses the superseded v1", `{"sha256":"abc","v":1}`, CodeUnsupportedVersion},
 		{"refuses a missing version", `{"sha256":"abc"}`, CodeUnsupportedVersion},
 		{"refuses non-JSON", `not json`, CodeMalformed},
 		{"refuses a non-object", `[1,2,3]`, CodeMalformed},
@@ -40,7 +41,7 @@ func TestDecodeJSONBodyEnforcesVersion(t *testing.T) {
 
 // TestVectorBodiesCarryVersionOne is the cheapest way to catch a vector
 // generated without "v".
-func TestVectorBodiesCarryVersionOne(t *testing.T) {
+func TestVectorBodiesCarryCurrentVersion(t *testing.T) {
 	var v frameVectors
 	loadVectors(t, "frames.json", &v)
 	checked := 0

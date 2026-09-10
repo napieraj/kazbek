@@ -19,6 +19,10 @@ const PayloadMaxSize int64 = 8 << 20
 // meaningful, so it is refused rather than carried.
 var PluginTypes = []string{"atx", "msd", "hid", "ugpio", "auth"}
 
+// SignatureModelHashOnly is the only trust model v2 accepts. A manifest
+// declaring anything else is uninterpretable, not merely invalid.
+const SignatureModelHashOnly = "hash-only"
+
 var (
 	// Constrained to what a Python module name may be, because this becomes
 	// kvmd.plugins.<type>.<name> at the device loader. Leading underscores are
@@ -27,7 +31,6 @@ var (
 	nameRe   = regexp.MustCompile(`^[a-z][a-z0-9_]{0,31}$`)
 	entryRe  = regexp.MustCompile(`^plugins/(atx|msd|hid|ugpio|auth)/([a-z][a-z0-9_]{0,31})\.py$`)
 	hexRe    = regexp.MustCompile(`^[0-9a-f]{64}$`)
-	capRe    = regexp.MustCompile(`^[a-z][a-z0-9_.]{0,63}$`)
 	compatRe = regexp.MustCompile(`^(>=|<=|==)?[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 )
 
@@ -37,14 +40,25 @@ type Payload struct {
 	Size   int64  `json:"size"`
 }
 
-// Signature is the stubbed trust block. It is defined now and populated never
-// — its presence in the schema is exactly what lets the signing module land as
-// an implementation change behind the Verifier seam rather than as a schema
-// migration across a fleet of already-deployed devices.
+// SignatureEntry is one signer's contribution. v2 requires the list to be
+// empty; the shape exists so single-key, threshold and keyless models drop in
+// without a schema migration across a fleet of deployed devices.
+type SignatureEntry struct {
+	Alg   string `json:"alg"`
+	KeyID string `json:"keyid"`
+	Value string `json:"value"`
+}
+
+// Signature is the trust block. It is required rather than optional so that
+// every manifest states its model explicitly: an optional block would leave
+// "unsigned" and "signature omitted" indistinguishable, which is the ambiguity
+// a downgrade attack lives in. A later signed verifier refuses
+// model:"hash-only" outright instead of inferring intent from an absent field.
 type Signature struct {
-	Alg   string `json:"alg,omitempty"`
-	KeyID string `json:"key_id,omitempty"`
-	Value string `json:"value,omitempty"`
+	Entries   []SignatureEntry `json:"entries"`
+	Expires   string           `json:"expires,omitempty"`
+	Model     string           `json:"model"`
+	Threshold *int             `json:"threshold,omitempty"`
 }
 
 // Manifest describes a plugin. Field order is bytewise-sorted by JSON tag so
@@ -55,21 +69,27 @@ type Signature struct {
 // empty" stay distinguishable — canonical encoding omits an absent field
 // entirely but must still emit an explicitly empty capabilities list.
 type Manifest struct {
-	Capabilities   *[]string  `json:"capabilities,omitempty"`
-	Entry          string     `json:"entry"`
-	FirmwareCompat string     `json:"firmware_compat"`
-	ModelCompat    string     `json:"model_compat"`
-	Name           string     `json:"name"`
-	Payload        Payload    `json:"payload"`
-	Runtime        string     `json:"runtime"`
-	Signature      *Signature `json:"signature,omitempty"`
-	Type           string     `json:"type"`
+	Entry          string    `json:"entry"`
+	FirmwareCompat string    `json:"firmware_compat"`
+	ModelCompat    string    `json:"model_compat"`
+	Name           string    `json:"name"`
+	Payload        Payload   `json:"payload"`
+	Revision       int64     `json:"revision"`
+	Runtime        string    `json:"runtime"`
+	Sandbox        *[]string `json:"sandbox,omitempty"`
+	Signature      Signature `json:"signature"`
+	Type           string    `json:"type"`
 }
 
 var (
-	manifestRequired = []string{"entry", "firmware_compat", "model_compat", "name", "payload", "runtime", "type"}
-	manifestOptional = []string{"capabilities", "signature"}
-	payloadRequired  = []string{"sha256", "size"}
+	manifestRequired = []string{
+		"entry", "firmware_compat", "model_compat", "name",
+		"payload", "revision", "runtime", "signature", "type",
+	}
+	manifestOptional  = []string{"sandbox"}
+	payloadRequired   = []string{"sha256", "size"}
+	signatureRequired = []string{"entries", "model"}
+	signatureOptional = []string{"expires", "threshold"}
 )
 
 // ParseManifest decodes canonical JSON into a Manifest without validating it.
@@ -91,6 +111,24 @@ func ParseManifest(data []byte) (*Manifest, error) {
 	}
 	if err := checkKeys(payloadRaw, payloadRequired, nil); err != nil {
 		return nil, err
+	}
+
+	var sigRaw map[string]json.RawMessage
+	if err := json.Unmarshal(raw["signature"], &sigRaw); err != nil {
+		return nil, refuse(CodeMalformed, "signature is not an object: %v", err)
+	}
+	if err := checkKeys(sigRaw, signatureRequired, signatureOptional); err != nil {
+		return nil, err
+	}
+
+	// revision must be a whole number: 1.5 and "1" are both refused here rather
+	// than silently truncated or coerced.
+	var rev json.Number
+	if err := json.Unmarshal(raw["revision"], &rev); err != nil {
+		return nil, refuse(CodeBadRevision, "revision is not a number: %v", err)
+	}
+	if _, err := rev.Int64(); err != nil {
+		return nil, refuse(CodeBadRevision, "revision %s is not an integer", rev.String())
 	}
 
 	var m Manifest
@@ -131,6 +169,12 @@ func checkKeys(raw map[string]json.RawMessage, required, optional []string) erro
 func (m *Manifest) Validate() error {
 	if !nameRe.MatchString(m.Name) {
 		return refuse(CodeBadName, "name %q", m.Name)
+	}
+	if m.Revision < 1 {
+		return refuse(CodeBadRevision, "revision %d", m.Revision)
+	}
+	if err := m.validateSignature(); err != nil {
+		return err
 	}
 	if !isPluginType(m.Type) {
 		return refuse(CodeBadType, "type %q", m.Type)
@@ -173,18 +217,29 @@ func (m *Manifest) Validate() error {
 		return refuse(CodePayloadTooLarge, "payload.size %d exceeds %d", m.Payload.Size, PayloadMaxSize)
 	}
 
-	if m.Capabilities != nil && len(*m.Capabilities) > 0 {
-		// Device plugins draw their blast radius from the console they run on,
-		// not from a capability grant; allowing the field there would create a
-		// second, weaker authorisation story.
-		if m.Runtime != RuntimeManagement {
-			return refuse(CodeCapabilitiesNotAllowed, "runtime %q", m.Runtime)
-		}
-		for _, c := range *m.Capabilities {
-			if !capRe.MatchString(c) {
-				return refuse(CodeBadCapability, "capability %q", c)
-			}
-		}
+	if m.Sandbox != nil && len(*m.Sandbox) > 0 {
+		// Reserved until a vocabulary exists. Accepting a declaration that
+		// nothing enforces would be worse than having no field at all.
+		return refuse(CodeSandboxNotAllowed, "sandbox declares %d entries", len(*m.Sandbox))
+	}
+	return nil
+}
+
+// validateRevision is separated only so the ordering stays legible; revision is
+// checked early because a stale offer should not be diagnosed by whatever else
+// happens to be wrong with it.
+func (m *Manifest) validateSignature() error {
+	if m.Signature.Model != SignatureModelHashOnly {
+		// A manifest declaring a trust model this implementation does not have
+		// is uninterpretable, not merely invalid, and guessing at it is exactly
+		// the failure this field exists to prevent.
+		return refuse(CodeMalformed, "signature.model %q is not a v%d model", m.Signature.Model, ProtocolVersion)
+	}
+	if len(m.Signature.Entries) > 0 {
+		// A v2 implementation cannot check a signature and must not accept a
+		// manifest that claims one.
+		return refuse(CodeMalformed, "signature.entries has %d entries; v%d requires none",
+			len(m.Signature.Entries), ProtocolVersion)
 	}
 	return nil
 }

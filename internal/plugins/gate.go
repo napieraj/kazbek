@@ -70,9 +70,33 @@ func GateNamed(name string, m *Manifest, payload []byte) error {
 //
 // Admission neither sees nor needs the payload. That is what distinguishes it
 // from the verify gate, and it is why it can run on the offer alone.
-func AdmitOffer(m *Manifest) error {
+// installedRevision is the revision currently installed for this manifest's
+// name, or 0 when nothing is.
+func AdmitOffer(m *Manifest, installedRevision int64) error {
 	if m == nil {
 		return refuse(CodeMalformed, "no manifest")
 	}
-	return m.Validate()
+	if err := m.Validate(); err != nil {
+		return err
+	}
+	return CheckRevision(m, installedRevision)
+}
+
+// CheckRevision closes the downgrade and freeze attack class: re-serving a
+// genuinely-authored older plugin with a known flaw, or re-serving the current
+// one forever to prevent an upgrade.
+//
+// It is an integer comparison and nothing more, which is exactly why it lands
+// now rather than with signing — it needs no trust model to work, and even
+// mature implementations get it subtly wrong when it is buried inside one.
+//
+// Equal is refused, not just lower: an identical revision is the freeze half of
+// the class. Idempotent re-push is handled by the payload-hash noop path, which
+// compares what is actually installed, not by accepting a stale revision.
+func CheckRevision(m *Manifest, installedRevision int64) error {
+	if m.Revision <= installedRevision {
+		return refuse(CodePolicyRollbackRefused,
+			"revision %d is not newer than the installed %d", m.Revision, installedRevision)
+	}
+	return nil
 }

@@ -14,6 +14,7 @@ type admissionVectors struct {
 		ID          string          `json:"id"`
 		Description string          `json:"description"`
 		Manifest    json.RawMessage `json:"manifest"`
+		Installed   int64           `json:"installed_revision"`
 		Expect      string          `json:"expect"`
 		Code        string          `json:"code"`
 	} `json:"cases"`
@@ -33,7 +34,7 @@ func TestAdmitOfferVectors(t *testing.T) {
 		t.Run(c.ID, func(t *testing.T) {
 			m, err := ParseManifest(c.Manifest)
 			if err == nil {
-				err = AdmitOffer(m)
+				err = AdmitOffer(m, c.Installed)
 			}
 			if c.Expect == "admit" {
 				if err != nil {
@@ -58,11 +59,12 @@ func TestAdmitOfferVectors(t *testing.T) {
 func TestAdmissionPrecedesTransfer(t *testing.T) {
 	m, err := ParseManifest([]byte(`{"entry":"plugins/ugpio/big.py","firmware_compat":"*",` +
 		`"model_compat":"*","name":"big","payload":{"sha256":"` + zeros64 + `","size":8388609},` +
-		`"runtime":"device","type":"ugpio"}`))
+		`"revision":1,"runtime":"device","signature":{"entries":[],"model":"hash-only"},` +
+		`"type":"ugpio"}`))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	if got := CodeOf(AdmitOffer(m)); got != CodePayloadTooLarge {
+	if got := CodeOf(AdmitOffer(m, 0)); got != CodePayloadTooLarge {
 		t.Fatalf("admission code %q, want %q", got, CodePayloadTooLarge)
 	}
 }

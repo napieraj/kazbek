@@ -15,15 +15,15 @@ import (
 // that exists in the document and nowhere in the implementation, which a
 // reflection over the implementation could never notice.
 var knownCodes = []string{
-	CodeMalformed, CodeUnsupportedVersion, CodeBadName, CodeBadType, CodeBadRuntime,
+	CodeMalformed, CodeUnsupportedVersion, CodeBadName, CodeBadRevision, CodeBadType, CodeBadRuntime,
 	CodeBadEntry, CodeEntryTypeMismatch, CodeEntryNameMismatch, CodeBadCompat,
 	CodeBadPayloadHash, CodeBadPayloadSize, CodePayloadTooLarge,
-	CodeCapabilitiesNotAllowed, CodeBadCapability,
+	CodeSandboxNotAllowed,
 	CodePayloadSizeMismatch, CodePayloadHashMismatch,
 	CodeVerifyRefused, CodeVerifyUnconfigured,
 	CodeBundleMalformed, CodeBundleUnsafePath, CodeBundleUnsafeEntry, CodeBundleEntryMissing,
 	CodeWireBadFrame, CodeWireBadSequence, CodeWireBadFlags, CodeWireUnsolicited, CodeWireChunkTooLarge,
-	CodePolicyWrongRuntime, CodePolicyIncompatibleModel, CodePolicyIncompatibleFirmware,
+	CodePolicyRollbackRefused, CodePolicyWrongRuntime, CodePolicyIncompatibleModel, CodePolicyIncompatibleFirmware,
 	CodeInstallLoadFailed, CodeInstallPlaceFailed, CodeInstallReadbackMismatch,
 }
 

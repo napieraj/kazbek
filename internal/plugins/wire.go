@@ -34,7 +34,13 @@ const (
 	FlagLast = byte(0x01)
 
 	// ProtocolVersion is carried as "v" in every JSON body.
-	ProtocolVersion = 1
+	//
+	// v2 differs from v1 by three manifest changes: a mandatory monotonic
+	// revision, a structured and required signature block, and capabilities
+	// renamed to sandbox and reserved. Because unknown manifest fields are
+	// refused rather than ignored, none of the three could be added
+	// compatibly — which is the bump working as designed.
+	ProtocolVersion = 2
 )
 
 // Sub-types.
