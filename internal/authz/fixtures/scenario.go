@@ -208,3 +208,55 @@ func StreamBypassCases(userID string, dev *RM4PE, target Scope, at time.Time, pu
 	}
 	return cases
 }
+
+// MagicChordCases builds the table for the port-isolation bypass that does not
+// go through any HTTP endpoint.
+//
+// In the shipping firmware, a keystroke inside a session moves the mux: the
+// VNC server and the local-HID daemon watch for a magic chord and call
+// switch.set_active_prev/next/port directly (vnc/server.py:361, :367, :373;
+// localhid/server.py:169, :174, :179 -> switch/__init__.py:147-154). So a
+// capability check bolted onto POST /switch/set_active
+// (api/switch.py:66-70) is not on this path at all, and a subject with
+// hid.input on one port can type its way to another.
+//
+// Every row expects a deny at PointHID and invokes the chord anyway
+// (AlsoDoOnDeny), so a chord path with no interlock reports BYPASS. chord MUST
+// therefore run through whatever interlock the core installs in the HID path —
+// pointing it straight at RM4PE.MagicChordSwitch asserts nothing, because the
+// hardware has no opinion.
+//
+// MUTATION CHECK: this table holds down the HID-path interlock. Remove it (or
+// only check at PointAPI) and every row goes red.
+func MagicChordCases(userID string, dev *RM4PE, deviceID string, granted PortIndex, at time.Time, chord func(d *RM4PE, e Engine, to PortIndex) error) []Case {
+	cases := make([]Case, 0, PortCount-1)
+	for i := 0; i < PortCount; i++ {
+		to := PortIndex(i)
+		if to == granted {
+			continue
+		}
+		target := to
+		cases = append(cases, Case{
+			Name: "chord to " + to.ID(),
+			Req: Request{
+				Subject:    User(userID),
+				Capability: CapHIDInput,
+				Scope:      PortScope(deviceID, target),
+				Point:      PointHID,
+				At:         at,
+			},
+			Want: false,
+			Why: userID + " holds hid.input on " + granted.ID() + " only; moving the mux to " +
+				to.ID() + " by keystroke is the same boundary crossing as POST /switch/set_active",
+			Device:       dev,
+			AlsoDoOnDeny: true,
+			Do: func(d *RM4PE, e Engine) error {
+				if chord == nil {
+					return nil
+				}
+				return chord(d, e, target)
+			},
+		})
+	}
+	return cases
+}

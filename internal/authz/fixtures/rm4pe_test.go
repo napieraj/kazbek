@@ -204,3 +204,59 @@ func TestSnapshotRestoreRewindsStateAndLog(t *testing.T) {
 		t.Errorf("restore left %d calls in the log, want 0", n)
 	}
 }
+
+func TestStepClampsAtTheEndsOfTheChain(t *testing.T) {
+	// sysfs_chain.py:62-68 clamp rather than wrap.
+	d := NewRM4PE("kvm-1").SeedActivePort(0)
+	if err := d.SetActivePrev(); err != nil {
+		t.Fatalf("SetActivePrev: %v", err)
+	}
+	if got := d.ActivePort(); got != 0 {
+		t.Errorf("prev from 1.1 moved to %s; the firmware clamps", got)
+	}
+	d.SeedActivePort(PortCount - 1)
+	if err := d.SetActiveNext(); err != nil {
+		t.Fatalf("SetActiveNext: %v", err)
+	}
+	if got := d.ActivePort(); got != PortCount-1 {
+		t.Errorf("next from 1.4 moved to %s; the firmware clamps", got)
+	}
+	d.SeedActivePort(1)
+	if err := d.SetActiveNext(); err != nil {
+		t.Fatalf("SetActiveNext: %v", err)
+	}
+	if got := d.ActivePort(); got != 2 {
+		t.Errorf("next from 1.2 = %s, want 1.3", got)
+	}
+}
+
+func TestMagicChordMovesTheMuxWithoutAnHTTPRequest(t *testing.T) {
+	// vnc/server.py:361,367,373 and localhid/server.py:169,174,179 reach
+	// switch.set_active_* directly from a keystroke.
+	d := NewRM4PE("kvm-1").SeedAllLinksUp().SeedActivePort(0)
+	if err := d.MagicChordSwitch(2); err != nil {
+		t.Fatalf("MagicChordSwitch: %v", err)
+	}
+	if got := d.ActivePort(); got != 2 {
+		t.Fatalf("chord left the mux on %s, want 1.3", got)
+	}
+	calls := d.Calls()
+	last := calls[len(calls)-1]
+	if last.Op != OpMagicChord {
+		t.Errorf("chord recorded as %v, want %v: it must be distinguishable from the HTTP path, "+
+			"because a check on POST /switch/set_active does not see it", last.Op, OpMagicChord)
+	}
+	for _, c := range calls {
+		if c.Op == OpSetActivePort {
+			t.Errorf("the chord must not be recorded as an API set_active call")
+		}
+	}
+	// And the frame now comes from the port the caller was not granted.
+	f, err := d.PullVideoFrame()
+	if err != nil {
+		t.Fatalf("pull: %v", err)
+	}
+	if f.Port != 2 {
+		t.Errorf("frame from %s after the chord, want 1.3", f.Port)
+	}
+}

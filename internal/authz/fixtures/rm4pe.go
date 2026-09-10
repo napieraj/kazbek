@@ -173,6 +173,7 @@ const (
 	OpHIDInput      Op = "hid.input"              // follows the mux, not a port argument
 	OpATX           Op = "switch.atx"             // api/switch.py:155-176, per port
 	OpSetPortParams Op = "switch.set_port_params" // api/switch.py:86-102, per port
+	OpMagicChord    Op = "hid.magic-chord"        // vnc/server.py:373, localhid/server.py:179
 	OpReadState     Op = "switch.state"           // api/switch.py:52-54, whole device
 	OpRebootUnit    Op = "switch.reset"           // api/switch.py:116-121, whole device
 	OpSetColors     Op = "switch.set_colors"      // api/switch.py:104-112, whole device
@@ -409,6 +410,60 @@ func (d *RM4PE) SetActivePort(p PortIndex) error {
 	d.saved = p // sysfs_device.py:451-453 persists only after a real switch
 	d.hidSuspended = false
 	d.record(Call{Op: OpSetActivePort, Port: p, Detail: "mux moved (device-global)"})
+	return nil
+}
+
+// SetActivePrev and SetActiveNext step the mux one channel.
+//
+// sysfs_chain.py:62-68 — they CLAMP at the ends rather than wrapping, and they
+// are driven from Chain's own idea of the active port. Modelled because they
+// are the operations the magic chord reaches (switch/__init__.py:147-151), and
+// because "step to the next port" is a port-scope boundary crossing that a
+// naive check on set_active(port=N) will not see.
+func (d *RM4PE) SetActivePrev() error { return d.step(-1, "prev") }
+
+// SetActiveNext steps the mux up one channel. See SetActivePrev.
+func (d *RM4PE) SetActiveNext() error { return d.step(+1, "next") }
+
+func (d *RM4PE) step(delta int, label string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	next := d.active + PortIndex(delta)
+	if !d.active.Valid() || !next.Valid() {
+		// sysfs_chain.py:62-68 guard and silently do nothing.
+		d.record(Call{Op: OpSetActivePort, Port: PortNone, Detail: label + " (clamped, no-op)", Inert: true})
+		return nil
+	}
+	d.active, d.saved = next, next
+	d.record(Call{Op: OpSetActivePort, Port: next, Detail: label + " (mux moved, device-global)"})
+	return nil
+}
+
+// MagicChordSwitch moves the mux from INSIDE a session, by keystroke.
+//
+// This is a port-isolation bypass path that exists in the shipping firmware:
+// the VNC server and the local-HID daemon both watch for a magic chord and
+// call switch.set_active_prev/next/port directly —
+// vnc/server.py:361, :367, :373 and localhid/server.py:169, :174, :179, which
+// land on switch/__init__.py:147-154. No HTTP request is made, so a capability
+// check installed on POST /switch/set_active (api/switch.py:66-70) is NOT on
+// this path.
+//
+// The mock cannot refuse it — it has no authorization, and neither does the
+// hardware. That is the point: a subject holding hid.input on one port can
+// type its way to another unless the HID path itself carries an interlock. A
+// test asserts that the interlock exists by asking the engine at PointHID
+// before calling this, and failing if the engine allows.
+func (d *RM4PE) MagicChordSwitch(p PortIndex) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if !p.Valid() {
+		err := fmt.Errorf("%w: %d", ErrInvalidPort, int(p))
+		d.record(Call{Op: OpMagicChord, Port: p, Err: err})
+		return err
+	}
+	d.active, d.saved = p, p
+	d.record(Call{Op: OpMagicChord, Port: p, Detail: "mux moved by keystroke, no HTTP request"})
 	return nil
 }
 
