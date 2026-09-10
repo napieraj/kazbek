@@ -218,7 +218,13 @@ func doHttpProxy(srv *RttyServer, c net.Conn) {
 				"http proxy devid mismatch: hostDevID=%s sessionDevid=%s sid=%s group=%s host=%s uri=%s",
 				devID, ses.devid, sid, ses.group, domain, req.URL.String(),
 			)
+			// MUST return: sendHTTPErrorResponse only writes bytes to the
+			// raw conn (see its definition below) — it does not abort the
+			// handler. Without this return the mismatch is logged, an error
+			// page is written, AND the request is proxied to the device
+			// anyway, which makes this check non-blocking. Do not remove.
 			sendHTTPErrorResponse(c, "invalid")
+			return
 		}
 	} else {
 		log.Debug().Msgf(
